@@ -24,8 +24,14 @@ var initCmd = &cobra.Command{
 		if password != "" {
 			pw = password
 		} else {
+			tty, err := openTTY()
+			if err != nil {
+				return fmt.Errorf("cannot open terminal for password prompt: %w", err)
+			}
+			defer tty.Close()
+
 			fmt.Fprint(os.Stderr, "Enter master password: ")
-			pw1, err := term.ReadPassword(int(os.Stdin.Fd()))
+			pw1, err := term.ReadPassword(int(tty.Fd()))
 			fmt.Fprintln(os.Stderr)
 			if err != nil {
 				return fmt.Errorf("reading password: %w", err)
@@ -35,7 +41,7 @@ var initCmd = &cobra.Command{
 			}
 
 			fmt.Fprint(os.Stderr, "Confirm master password: ")
-			pw2, err := term.ReadPassword(int(os.Stdin.Fd()))
+			pw2, err := term.ReadPassword(int(tty.Fd()))
 			fmt.Fprintln(os.Stderr)
 			if err != nil {
 				return fmt.Errorf("reading password: %w", err)

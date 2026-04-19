@@ -28,8 +28,14 @@ var setCmd = &cobra.Command{
 		if secretValue != "" {
 			value = secretValue
 		} else {
+			tty, err := openTTY()
+			if err != nil {
+				return fmt.Errorf("cannot open terminal for secret prompt: %w", err)
+			}
+			defer tty.Close()
+
 			fmt.Fprint(os.Stderr, "Enter secret value: ")
-			raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+			raw, err := term.ReadPassword(int(tty.Fd()))
 			fmt.Fprintln(os.Stderr)
 			if err != nil {
 				return fmt.Errorf("reading secret: %w", err)

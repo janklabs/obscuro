@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/janklabs/obscuro/internal/crypto"
 	"github.com/janklabs/obscuro/internal/store"
@@ -37,17 +38,33 @@ func RootCmd() *cobra.Command {
 }
 
 // getPassword returns the password from the flag or prompts interactively.
+// Opens /dev/tty directly so it works even when stdin is piped (e.g. Helm post-renderer).
 func getPassword(prompt string) (string, error) {
 	if password != "" {
 		return password, nil
 	}
+
+	tty, err := openTTY()
+	if err != nil {
+		return "", fmt.Errorf("cannot open terminal for password prompt: %w", err)
+	}
+	defer tty.Close()
+
 	fmt.Fprint(os.Stderr, prompt)
-	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	pw, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("reading password: %w", err)
 	}
 	return string(pw), nil
+}
+
+// openTTY opens the terminal device directly, bypassing stdin.
+func openTTY() (*os.File, error) {
+	if runtime.GOOS == "windows" {
+		return os.Open("CONIN$")
+	}
+	return os.Open("/dev/tty")
 }
 
 // authenticate loads config, gets password, derives key, and verifies it.
