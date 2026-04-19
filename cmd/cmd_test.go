@@ -145,3 +145,14 @@ func TestInject(t *testing.T) {
 		t.Fatalf("expected:\n%s\ngot:\n%s", expected, stdout)
 	}
 }
+
+func TestVersion(t *testing.T) {
+	setup(t)
+	stdout, _, err := execCmd(t, "version")
+	if err != nil {
+		t.Fatalf("version failed: %v", err)
+	}
+	if !strings.Contains(stdout, "obscuro") {
+		t.Fatalf("expected output to contain 'obscuro', got %q", stdout)
+	}
+}

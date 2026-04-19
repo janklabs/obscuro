@@ -18,8 +18,20 @@ trap 'rm -rf "$TMPDIR"' EXIT
 info "Cloning repository..."
 git clone --depth 1 "$REPO" "$TMPDIR/obscuro"
 
-info "Building $BINARY..."
-(cd "$TMPDIR/obscuro" && go build -o "$BINARY" .)
+# Detect latest version tag
+VERSION=$(git -C "$TMPDIR/obscuro" tag --sort=-v:refname | head -n 1)
+if [ -z "$VERSION" ]; then
+  # No tags yet, fall back to fetching from remote
+  VERSION=$(git ls-remote --tags --refs "$REPO" | awk '{print $2}' | sed 's|refs/tags/||' | sort -V | tail -n 1)
+fi
+if [ -z "$VERSION" ]; then
+  VERSION="dev"
+fi
+
+LDFLAGS="-X github.com/janklabs/obscuro/internal/version.Version=${VERSION}"
+
+info "Building $BINARY ($VERSION)..."
+(cd "$TMPDIR/obscuro" && go build -ldflags "$LDFLAGS" -o "$BINARY" .)
 
 # Install
 mkdir -p "$INSTALL_DIR"

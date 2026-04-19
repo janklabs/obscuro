@@ -1,5 +1,7 @@
 # Obscuro
 
+[![CI](https://github.com/janklabs/obscuro/actions/workflows/ci.yml/badge.svg)](https://github.com/janklabs/obscuro/actions/workflows/ci.yml)
+
 Safely store encrypted secrets in your repository. Obscuro encrypts values with a password-derived key (Argon2id + AES-256-GCM) and stores them in `.obscuro/secrets.json`. Secrets are injected into templates by replacing `__KEY__` placeholders via stdin/stdout — designed to work as a Helm post-renderer.
 
 ## Installation
@@ -19,7 +21,7 @@ Requires [Go 1.21+](https://go.dev/dl).
 ```bash
 git clone https://github.com/janklabs/obscuro.git
 cd obscuro
-go build -o obscuro .
+go build -ldflags "-X github.com/janklabs/obscuro/internal/version.Version=$(git describe --tags --always)" -o obscuro .
 mv obscuro ~/.local/bin/  # or anywhere on your PATH
 ```
 
@@ -77,6 +79,23 @@ echo "token: __API_KEY__" | obscuro inject --password mypass
 # Output: token: my-secret
 ```
 
+### `obscuro version`
+
+Prints the current version.
+
+```bash
+obscuro version
+# Output: obscuro v1.2.0
+```
+
+### `obscuro upgrade`
+
+Upgrades to the latest release. Fetches the latest tag from GitHub, builds from source in a temp directory, and replaces the current binary. Requires Go to be installed.
+
+```bash
+obscuro upgrade
+```
+
 ### Flags
 
 | Flag | Short | Scope | Description |
@@ -120,6 +139,16 @@ Both files in `.obscuro/` are safe to commit:
 3. **`get`** / **`inject`** derive the key, verify it, then decrypt.
 
 Identical values produce different ciphertexts each time due to random nonces.
+
+## Versioning
+
+Versions are managed automatically using [Conventional Commits](https://www.conventionalcommits.org/) and [release-please](https://github.com/googleapis/release-please).
+
+- `feat:` commits bump the **minor** version
+- `fix:` commits bump the **patch** version
+- `feat!:` or `BREAKING CHANGE` commits bump the **major** version
+
+On push to `main`, release-please opens (or updates) a Release PR with a changelog. Merging that PR creates a git tag and GitHub Release.
 
 ## Running tests
 
