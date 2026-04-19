@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 )
 
 const (
@@ -16,44 +19,101 @@ const (
 	SecretsFile = "secrets.json"
 )
 
+var (
+	repoRoot     string
+	repoRootOnce sync.Once
+	repoRootErr  error
+)
+
+// RepoRoot returns the git repository root directory.
+// It caches the result after the first call.
+func RepoRoot() (string, error) {
+	repoRootOnce.Do(func() {
+		out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+		if err != nil {
+			repoRootErr = fmt.Errorf("not inside a git repository")
+			return
+		}
+		repoRoot = strings.TrimSpace(string(out))
+	})
+	return repoRoot, repoRootErr
+}
+
+// ResetRoot clears the cached repo root. Used in tests.
+func ResetRoot() {
+	repoRootOnce = sync.Once{}
+	repoRoot = ""
+	repoRootErr = nil
+}
+
 // Config holds the Argon2id salt and verification token.
 type Config struct {
 	Salt              string `json:"salt"`               // base64-encoded
 	VerificationToken string `json:"verification_token"` // base64(nonce||ciphertext)
 }
 
-// Dir returns the .obscuro directory path relative to the current working directory.
-func Dir() string {
-	return DirName
+// Dir returns the absolute path to the .obscuro directory at the repo root.
+func Dir() (string, error) {
+	root, err := RepoRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, DirName), nil
 }
 
-func configPath() string {
-	return filepath.Join(DirName, ConfigFile)
+func configPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, ConfigFile), nil
 }
 
-func secretsPath() string {
-	return filepath.Join(DirName, SecretsFile)
+func secretsPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, SecretsFile), nil
 }
 
 // IsInitialized returns true if the .obscuro directory and config exist.
 func IsInitialized() bool {
-	_, err := os.Stat(configPath())
+	p, err := configPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(p)
 	return err == nil
 }
 
 // Init creates the .obscuro directory, config, and empty secrets file.
 func Init(salt []byte, verificationToken string) error {
-	if err := os.MkdirAll(DirName, 0o700); err != nil {
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	cp, err := configPath()
+	if err != nil {
+		return err
 	}
 	cfg := Config{
 		Salt:              base64.StdEncoding.EncodeToString(salt),
 		VerificationToken: verificationToken,
 	}
-	if err := writeJSON(configPath(), cfg); err != nil {
+	if err := writeJSON(cp, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
-	if err := writeJSON(secretsPath(), map[string]string{}); err != nil {
+
+	sp, err := secretsPath()
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(sp, map[string]string{}); err != nil {
 		return fmt.Errorf("writing secrets: %w", err)
 	}
 	return nil
@@ -61,7 +121,11 @@ func Init(salt []byte, verificationToken string) error {
 
 // LoadConfig reads and parses the config file.
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(configPath())
+	p, err := configPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
@@ -72,14 +136,18 @@ func LoadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-// Salt returns the decoded salt from config.
+// DecodeSalt returns the decoded salt from config.
 func (c *Config) DecodeSalt() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(c.Salt)
 }
 
 // LoadSecrets reads the secrets file into a map.
 func LoadSecrets() (map[string]string, error) {
-	data, err := os.ReadFile(secretsPath())
+	p, err := secretsPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, nil
@@ -95,7 +163,11 @@ func LoadSecrets() (map[string]string, error) {
 
 // SaveSecrets writes the secrets map to disk.
 func SaveSecrets(secrets map[string]string) error {
-	return writeJSON(secretsPath(), secrets)
+	p, err := secretsPath()
+	if err != nil {
+		return err
+	}
+	return writeJSON(p, secrets)
 }
 
 // ListKeys returns sorted secret key names.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -11,6 +12,12 @@ func setup(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	// Initialize a git repo so RepoRoot() works
+	if out, err := exec.Command("git", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+	// Reset cached repo root from previous tests
+	ResetRoot()
 }
 
 func TestIsInitializedFalseBeforeInit(t *testing.T) {

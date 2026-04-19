@@ -3,8 +3,11 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/janklabs/obscuro/internal/store"
 )
 
 const testPassword = "test-master-pw"
@@ -15,7 +18,12 @@ func setup(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	// Reset the flag between tests
+	// Initialize a git repo so store.RepoRoot() works
+	if out, err := exec.Command("git", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+	// Reset cached repo root and flags between tests
+	store.ResetRoot()
 	password = ""
 	secretValue = ""
 }
