@@ -22,6 +22,15 @@ var upgradeCmd = &cobra.Command{
 	Long: `Fetches the latest release tag from GitHub, builds from source,
 and replaces the current binary. Requires Go to be installed.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := runUpgrade(); err != nil {
+			fmt.Fprintf(os.Stderr, "\nUpgrade failed. You can reinstall manually:\n  curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash\n")
+			return err
+		}
+		return nil
+	},
+}
+
+func runUpgrade() error {
 		current := version.Version
 		fmt.Fprintf(os.Stderr, "Current version: %s\n", current)
 
@@ -87,7 +96,6 @@ and replaces the current binary. Requires Go to be installed.`,
 
 		fmt.Fprintf(os.Stderr, "Upgraded obscuro from %s to %s\n", current, latest)
 		return nil
-	},
 }
 
 func init() {

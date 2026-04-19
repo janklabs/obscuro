@@ -11,6 +11,17 @@ err()  { printf "\033[1;31merror:\033[0m %s\n" "$1" >&2; exit 1; }
 # Check for go
 command -v go >/dev/null 2>&1 || err "Go is not installed. Install it from https://go.dev/dl"
 
+# Check for existing installation
+if [ -x "$INSTALL_DIR/$BINARY" ]; then
+  CURRENT=$("$INSTALL_DIR/$BINARY" version 2>/dev/null || echo "unknown")
+  printf "\033[1;33m%s is already installed (%s).\033[0m\n" "$BINARY" "$CURRENT"
+  read -rp "Reinstall? [y/N] " answer
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    info "Cancelled."
+    exit 0
+  fi
+fi
+
 # Clone into temp directory
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
