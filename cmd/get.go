@@ -35,7 +35,7 @@ var getCmd = &cobra.Command{
 			return fmt.Errorf("decrypting secret: %w", err)
 		}
 
-		cmd.Print(string(plaintext))
+		fmt.Fprint(Stdout, string(plaintext))
 		return nil
 	},
 }

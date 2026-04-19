@@ -69,7 +69,7 @@ Designed for use as a Helm post-renderer:
 			tty.Close()
 		}
 
-		cmd.Print(output)
+		fmt.Fprint(Stdout, output)
 		return nil
 	},
 }

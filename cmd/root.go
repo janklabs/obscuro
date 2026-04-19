@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
@@ -12,6 +13,10 @@ import (
 )
 
 var password string
+
+// Stdout is the writer for command output (payload data).
+// Tests can override this to capture output.
+var Stdout io.Writer = os.Stdout
 
 var rootCmd = &cobra.Command{
 	Use:   "obscuro",

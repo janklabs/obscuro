@@ -22,12 +22,12 @@ var listCmd = &cobra.Command{
 
 		keys := store.ListKeys(secrets)
 		if len(keys) == 0 {
-			cmd.Println("No secrets stored.")
+			fmt.Fprintln(Stdout, "No secrets stored.")
 			return nil
 		}
 
 		for _, k := range keys {
-			cmd.Println(k)
+			fmt.Fprintln(Stdout, k)
 		}
 		return nil
 	},

@@ -33,10 +33,11 @@ func execCmd(t *testing.T, args ...string) (string, string, error) {
 	rootCmd.SetArgs(args)
 
 	var stdout, stderr bytes.Buffer
-	rootCmd.SetOut(&stdout)
+	Stdout = &stdout
 	rootCmd.SetErr(&stderr)
 
 	err := rootCmd.Execute()
+	Stdout = os.Stdout
 	return stdout.String(), stderr.String(), err
 }
 
