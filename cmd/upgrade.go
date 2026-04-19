@@ -62,7 +62,7 @@ and replaces the current binary. Requires Go to be installed.`,
 		if runtime.GOOS == "windows" {
 			binaryName = "obscuro.exe"
 		}
-		newBinary := filepath.Join(tmpDir, binaryName)
+		newBinary := filepath.Join(tmpDir, "bin-"+binaryName)
 
 		buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinary, ".")
 		buildCmd.Dir = filepath.Join(tmpDir, "obscuro")
