@@ -31,71 +31,71 @@ and replaces the current binary. Requires Go to be installed.`,
 }
 
 func runUpgrade() error {
-		current := version.Version
-		fmt.Fprintf(os.Stderr, "Current version: %s\n", current)
+	current := version.Version
+	fmt.Fprintf(os.Stderr, "Current version: %s\n", current)
 
-		// Fetch latest tag
-		fmt.Fprintln(os.Stderr, "Fetching latest version...")
-		latest, err := fetchLatestTag()
-		if err != nil {
-			return fmt.Errorf("fetching latest version: %w", err)
-		}
-		if latest == "" {
-			return fmt.Errorf("no release tags found")
-		}
+	// Fetch latest tag
+	fmt.Fprintln(os.Stderr, "Fetching latest version...")
+	latest, err := fetchLatestTag()
+	if err != nil {
+		return fmt.Errorf("fetching latest version: %w", err)
+	}
+	if latest == "" {
+		return fmt.Errorf("no release tags found")
+	}
 
-		fmt.Fprintf(os.Stderr, "Latest version: %s\n", latest)
+	fmt.Fprintf(os.Stderr, "Latest version: %s\n", latest)
 
-		// Compare versions
-		if current != "dev" && semver.Compare(current, latest) >= 0 {
-			fmt.Fprintf(os.Stderr, "Already up to date (%s)\n", current)
-			return nil
-		}
-
-		// Clone and build
-		fmt.Fprintf(os.Stderr, "Downloading and building %s...\n", latest)
-		tmpDir, err := os.MkdirTemp("", "obscuro-upgrade-*")
-		if err != nil {
-			return fmt.Errorf("creating temp dir: %w", err)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--branch", latest, repoURL, filepath.Join(tmpDir, "obscuro"))
-		cloneCmd.Stderr = os.Stderr
-		if err := cloneCmd.Run(); err != nil {
-			return fmt.Errorf("cloning repo: %w", err)
-		}
-
-		ldflags := fmt.Sprintf("-X github.com/janklabs/obscuro/internal/version.Version=%s", latest)
-		binaryName := "obscuro"
-		if runtime.GOOS == "windows" {
-			binaryName = "obscuro.exe"
-		}
-		newBinary := filepath.Join(tmpDir, "bin-"+binaryName)
-
-		buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinary, ".")
-		buildCmd.Dir = filepath.Join(tmpDir, "obscuro")
-		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("building: %w", err)
-		}
-
-		// Replace current binary
-		execPath, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("finding current binary: %w", err)
-		}
-		execPath, err = filepath.EvalSymlinks(execPath)
-		if err != nil {
-			return fmt.Errorf("resolving symlinks: %w", err)
-		}
-
-		if err := atomicReplace(newBinary, execPath); err != nil {
-			return fmt.Errorf("replacing binary: %w", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "Upgraded obscuro from %s to %s\n", current, latest)
+	// Compare versions
+	if current != "dev" && semver.Compare(current, latest) >= 0 {
+		fmt.Fprintf(os.Stderr, "Already up to date (%s)\n", current)
 		return nil
+	}
+
+	// Clone and build
+	fmt.Fprintf(os.Stderr, "Downloading and building %s...\n", latest)
+	tmpDir, err := os.MkdirTemp("", "obscuro-upgrade-*")
+	if err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--branch", latest, repoURL, filepath.Join(tmpDir, "obscuro"))
+	cloneCmd.Stderr = os.Stderr
+	if err := cloneCmd.Run(); err != nil {
+		return fmt.Errorf("cloning repo: %w", err)
+	}
+
+	ldflags := fmt.Sprintf("-X github.com/janklabs/obscuro/internal/version.Version=%s", latest)
+	binaryName := "obscuro"
+	if runtime.GOOS == "windows" {
+		binaryName = "obscuro.exe"
+	}
+	newBinary := filepath.Join(tmpDir, "bin-"+binaryName)
+
+	buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinary, ".")
+	buildCmd.Dir = filepath.Join(tmpDir, "obscuro")
+	buildCmd.Stderr = os.Stderr
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("building: %w", err)
+	}
+
+	// Replace current binary
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding current binary: %w", err)
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return fmt.Errorf("resolving symlinks: %w", err)
+	}
+
+	if err := atomicReplace(newBinary, execPath); err != nil {
+		return fmt.Errorf("replacing binary: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Upgraded obscuro from %s to %s\n", current, latest)
+	return nil
 }
 
 func init() {
