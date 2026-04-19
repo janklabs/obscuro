@@ -139,19 +139,3 @@ Both files in `.obscuro/` are safe to commit:
 3. **`get`** / **`inject`** derive the key, verify it, then decrypt.
 
 Identical values produce different ciphertexts each time due to random nonces.
-
-## Versioning
-
-Versions are managed automatically using [Conventional Commits](https://www.conventionalcommits.org/) and [release-please](https://github.com/googleapis/release-please).
-
-- `feat:` commits bump the **minor** version
-- `fix:` commits bump the **patch** version
-- `feat!:` or `BREAKING CHANGE` commits bump the **major** version
-
-On push to `main`, release-please opens (or updates) a Release PR with a changelog. Merging that PR creates a git tag and GitHub Release.
-
-## Running tests
-
-```bash
-go test ./...
-```
