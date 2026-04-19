@@ -30,9 +30,9 @@ var initCmd = &cobra.Command{
 			}
 			defer tty.Close()
 
-			fmt.Fprint(os.Stderr, "Enter master password: ")
+			fmt.Fprint(tty, "Enter master password: ")
 			pw1, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(tty)
 			if err != nil {
 				return fmt.Errorf("reading password: %w", err)
 			}
@@ -40,9 +40,9 @@ var initCmd = &cobra.Command{
 				return fmt.Errorf("password cannot be empty")
 			}
 
-			fmt.Fprint(os.Stderr, "Confirm master password: ")
+			fmt.Fprint(tty, "Confirm master password: ")
 			pw2, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(tty)
 			if err != nil {
 				return fmt.Errorf("reading password: %w", err)
 			}

@@ -34,9 +34,9 @@ var setCmd = &cobra.Command{
 			}
 			defer tty.Close()
 
-			fmt.Fprint(os.Stderr, "Enter secret value: ")
+			fmt.Fprint(tty, "Enter secret value: ")
 			raw, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(tty)
 			if err != nil {
 				return fmt.Errorf("reading secret: %w", err)
 			}
