@@ -60,7 +60,7 @@ func runUpgrade() error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--branch", latest, repoURL, filepath.Join(tmpDir, "obscuro"))
+	cloneCmd := exec.Command("git", "clone", "--quiet", "--depth", "1", "--branch", latest, repoURL, filepath.Join(tmpDir, "obscuro"))
 	cloneCmd.Stderr = os.Stderr
 	if err := cloneCmd.Run(); err != nil {
 		return fmt.Errorf("cloning repo: %w", err)
