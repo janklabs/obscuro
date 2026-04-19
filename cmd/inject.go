@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/janklabs/obscuro/internal/crypto"
@@ -45,11 +46,27 @@ Designed for use as a Helm post-renderer:
 			return fmt.Errorf("reading stdin: %w", err)
 		}
 
-		// Replace placeholders
+		// Replace placeholders and track which were injected
 		output := string(input)
+		var injected []string
 		for name, value := range decrypted {
 			placeholder := "__" + name + "__"
-			output = strings.ReplaceAll(output, placeholder, value)
+			replaced := strings.ReplaceAll(output, placeholder, value)
+			if replaced != output {
+				injected = append(injected, name)
+				output = replaced
+			}
+		}
+
+		// Print summary to terminal
+		if tty, err := openTTY(); err == nil {
+			if len(injected) > 0 {
+				sort.Strings(injected)
+				fmt.Fprintf(tty, "Injected: %s\n", strings.Join(injected, ", "))
+			} else {
+				fmt.Fprintln(tty, "No secrets injected.")
+			}
+			tty.Close()
 		}
 
 		cmd.Print(output)
