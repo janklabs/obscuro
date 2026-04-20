@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"bufio"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/janklabs/obscuro/internal/crypto"
+	"github.com/janklabs/obscuro/internal/keychain"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -69,8 +73,38 @@ var initCmd = &cobra.Command{
 		}
 
 		fmt.Fprintln(os.Stderr, "Initialized .obscuro successfully.")
+
+		// Offer to store password in OS keychain (only for interactive sessions)
+		if password == "" {
+			saltB64 := base64.StdEncoding.EncodeToString(salt)
+			offerKeychainStore(pw, saltB64)
+		}
+
 		return nil
 	},
+}
+
+// offerKeychainStore prompts the user to store the password in the OS keychain.
+// Silently skips if no TTY is available (non-interactive / CI).
+func offerKeychainStore(pw, salt string) {
+	tty, err := openTTY()
+	if err != nil {
+		return
+	}
+	defer tty.Close()
+
+	fmt.Fprint(tty, "Store password in OS keychain? [Y/n] ")
+	reader := bufio.NewReader(tty)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer == "" || answer == "y" || answer == "yes" {
+		if err := keychain.Store(salt, pw); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not store in keychain: %v\n", err)
+			return
+		}
+		fmt.Fprintln(tty, "Password stored in OS keychain.")
+	}
 }
 
 func init() {

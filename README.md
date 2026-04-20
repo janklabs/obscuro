@@ -96,12 +96,40 @@ Upgrades to the latest release. Fetches the latest tag from GitHub, builds from 
 obscuro upgrade
 ```
 
+### `obscuro auth`
+
+Manage OS keychain password storage.
+
+```bash
+obscuro auth store    # Verify and store password in OS keychain
+obscuro auth clear    # Remove password from keychain
+obscuro auth status   # Check if keychain has a stored password
+```
+
 ### Flags
 
 | Flag | Short | Scope | Description |
 |------|-------|-------|-------------|
 | `--password` | `-p` | All commands | Master password (skips interactive prompt) |
 | `--value` | | `set` only | Secret value (skips interactive prompt) |
+
+## Password resolution
+
+The master password is resolved in this order:
+
+1. `--password` / `-p` flag
+2. OS keychain (macOS Keychain, Linux Secret Service)
+3. `OBSCURO_PASSWORD` environment variable
+4. Interactive terminal prompt
+
+During `obscuro init`, you'll be asked to store the password in the OS keychain. Once stored, all subsequent commands (including `inject` as a Helm post-renderer) authenticate automatically with no flags, env vars, or prompts needed.
+
+For CI/headless environments where no keychain is available, use the environment variable:
+
+```bash
+export OBSCURO_PASSWORD=mypassword
+helm install myrelease ./chart --post-renderer obscuro --post-renderer-args inject
+```
 
 ## Helm post-renderer
 

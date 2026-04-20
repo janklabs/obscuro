@@ -165,3 +165,44 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("expected output to contain 'obscuro', got %q", stdout)
 	}
 }
+
+func TestGetViaEnvVar(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, err := execCmd(t, "set", "API_KEY", "--password", testPassword, "--value", "env-secret")
+	if err != nil {
+		t.Fatalf("set failed: %v", err)
+	}
+
+	// Use env var instead of --password flag
+	os.Setenv("OBSCURO_PASSWORD", testPassword)
+	defer os.Unsetenv("OBSCURO_PASSWORD")
+
+	stdout, _, err := execCmd(t, "get", "API_KEY")
+	if err != nil {
+		t.Fatalf("get via env var failed: %v", err)
+	}
+	if stdout != "env-secret" {
+		t.Fatalf("expected 'env-secret', got %q", stdout)
+	}
+}
+
+func TestEnvVarWrongPassword(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "API_KEY", "--password", testPassword, "--value", "secret")
+
+	password = ""
+	os.Setenv("OBSCURO_PASSWORD", "wrong-password")
+	defer os.Unsetenv("OBSCURO_PASSWORD")
+
+	_, _, err := execCmd(t, "get", "API_KEY")
+	if err == nil {
+		t.Fatal("expected error for wrong env var password")
+	}
+	if !strings.Contains(err.Error(), "incorrect password") {
+		t.Fatalf("expected 'incorrect password' error, got: %v", err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/janklabs/obscuro/internal/crypto"
+	"github.com/janklabs/obscuro/internal/keychain"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -42,13 +43,30 @@ func RootCmd() *cobra.Command {
 	return rootCmd
 }
 
-// getPassword returns the password from the flag or prompts interactively.
-// Opens /dev/tty directly so it works even when stdin is piped (e.g. Helm post-renderer).
-func getPassword(prompt string) (string, error) {
+// getPassword resolves the master password using the following priority:
+//  1. --password / -p flag
+//  2. OS keychain (keyed by vault salt)
+//  3. OBSCURO_PASSWORD environment variable
+//  4. Interactive /dev/tty prompt
+func getPassword(prompt string, salt string) (string, error) {
+	// 1. Flag
 	if password != "" {
 		return password, nil
 	}
 
+	// 2. OS keychain
+	if salt != "" {
+		if pw, err := keychain.Get(salt); err == nil && pw != "" {
+			return pw, nil
+		}
+	}
+
+	// 3. Environment variable
+	if pw := os.Getenv("OBSCURO_PASSWORD"); pw != "" {
+		return pw, nil
+	}
+
+	// 4. Interactive prompt
 	tty, err := openTTY()
 	if err != nil {
 		return "", fmt.Errorf("cannot open terminal for password prompt: %w", err)
@@ -88,7 +106,7 @@ func authenticate() ([]byte, error) {
 		return nil, fmt.Errorf("decoding salt: %w", err)
 	}
 
-	pw, err := getPassword("Enter master password: ")
+	pw, err := getPassword("Enter master password: ", cfg.Salt)
 	if err != nil {
 		return nil, err
 	}
