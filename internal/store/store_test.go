@@ -91,3 +91,41 @@ func TestListKeysSorted(t *testing.T) {
 		t.Fatalf("expected sorted keys, got %v", keys)
 	}
 }
+
+func TestDeleteSecret(t *testing.T) {
+	setup(t)
+	_ = Init([]byte("0123456789abcdef"), "token")
+
+	secrets := map[string]string{
+		"API_KEY": "encrypted1",
+		"DB_PASS": "encrypted2",
+	}
+	if err := SaveSecrets(secrets); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DeleteSecret("API_KEY"); err != nil {
+		t.Fatalf("DeleteSecret failed: %v", err)
+	}
+
+	loaded, err := LoadSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loaded["API_KEY"]; ok {
+		t.Fatal("expected API_KEY to be deleted")
+	}
+	if loaded["DB_PASS"] != "encrypted2" {
+		t.Fatal("expected DB_PASS to remain")
+	}
+}
+
+func TestDeleteSecretNotFound(t *testing.T) {
+	setup(t)
+	_ = Init([]byte("0123456789abcdef"), "token")
+
+	err := DeleteSecret("NONEXISTENT")
+	if err == nil {
+		t.Fatal("expected error for non-existent key")
+	}
+}

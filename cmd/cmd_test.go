@@ -188,6 +188,41 @@ func TestGetViaEnvVar(t *testing.T) {
 	}
 }
 
+func TestRemove(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "API_KEY", "--password", testPassword, "--value", "secret123")
+	_, _, _ = execCmd(t, "set", "DB_PASS", "--password", testPassword, "--value", "dbpass456")
+
+	_, stderr, err := execCmd(t, "remove", "API_KEY")
+	if err != nil {
+		t.Fatalf("remove failed: %v", err)
+	}
+	if !strings.Contains(stderr, "removed") {
+		t.Fatalf("expected 'removed' in stderr, got %q", stderr)
+	}
+
+	// Verify it's gone from list
+	stdout, _, _ := execCmd(t, "list")
+	if strings.Contains(stdout, "API_KEY") {
+		t.Fatal("expected API_KEY to be removed from list")
+	}
+	if !strings.Contains(stdout, "DB_PASS") {
+		t.Fatal("expected DB_PASS to remain in list")
+	}
+}
+
+func TestRemoveNonExistent(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, err := execCmd(t, "remove", "NOPE")
+	if err == nil {
+		t.Fatal("expected error for removing non-existent key")
+	}
+}
+
 func TestEnvVarWrongPassword(t *testing.T) {
 	setup(t)
 	initVault(t)

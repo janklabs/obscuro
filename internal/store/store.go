@@ -180,6 +180,19 @@ func ListKeys(secrets map[string]string) []string {
 	return keys
 }
 
+// DeleteSecret removes a secret by key. Returns an error if the key does not exist.
+func DeleteSecret(name string) error {
+	secrets, err := LoadSecrets()
+	if err != nil {
+		return err
+	}
+	if _, ok := secrets[name]; !ok {
+		return fmt.Errorf("secret '%s' not found", name)
+	}
+	delete(secrets, name)
+	return SaveSecrets(secrets)
+}
+
 func writeJSON(path string, v interface{}) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
