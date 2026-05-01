@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/janklabs/obscuro/internal/crypto"
@@ -17,6 +18,7 @@ import (
 )
 
 var password string
+var passwordFile string
 
 // Stdout is the writer for command output (payload data).
 // Tests can override this to capture output.
@@ -77,7 +79,8 @@ by replacing __KEY__ placeholders via stdin/stdout.`,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "master password (avoids interactive prompt)")
+	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "master password (avoids interactive prompt; visible in process list)")
+	rootCmd.PersistentFlags().StringVar(&passwordFile, "password-file", "", "read master password from file (or - for stdin)")
 }
 
 // Execute runs the root command.
@@ -94,16 +97,26 @@ func RootCmd() *cobra.Command {
 
 // getPassword resolves the master password using the following priority:
 //  1. --password / -p flag
-//  2. OS keychain (keyed by vault salt)
-//  3. OBSCURO_PASSWORD environment variable
-//  4. Interactive /dev/tty prompt
+//  2. --password-file flag (reads from file, or stdin if "-")
+//  3. OS keychain (keyed by vault salt)
+//  4. OBSCURO_PASSWORD environment variable
+//  5. Interactive /dev/tty prompt
 func getPassword(prompt string, salt string) (string, error) {
 	// 1. Flag
 	if password != "" {
 		return password, nil
 	}
 
-	// 2. OS keychain
+	// 2. Password file
+	if passwordFile != "" {
+		pw, err := readSecretFile(passwordFile)
+		if err != nil {
+			return "", fmt.Errorf("reading password file: %w", err)
+		}
+		return pw, nil
+	}
+
+	// 3. OS keychain
 	if salt != "" {
 		if pw, err := keychain.Get(salt); err == nil && pw != "" {
 			return pw, nil
@@ -166,4 +179,22 @@ func authenticate() ([]byte, error) {
 	}
 
 	return key, nil
+}
+
+// readSecretFile reads a secret from a file path, or from stdin if path is "-".
+// It trims a single trailing newline to be friendly with files created by echo.
+func readSecretFile(path string) (string, error) {
+	var data []byte
+	var err error
+	if path == "-" {
+		data, err = io.ReadAll(os.Stdin)
+	} else {
+		data, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return "", err
+	}
+	s := string(data)
+	s = strings.TrimRight(s, "\r\n")
+	return s, nil
 }

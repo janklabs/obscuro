@@ -15,6 +15,10 @@ var removeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
+		if _, err := authenticate(); err != nil {
+			return err
+		}
+
 		if err := store.DeleteSecret(name); err != nil {
 			return err
 		}

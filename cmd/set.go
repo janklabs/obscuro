@@ -11,6 +11,7 @@ import (
 )
 
 var secretValue string
+var secretValueFile string
 
 var setCmd = &cobra.Command{
 	Use:   "set KEY",
@@ -27,6 +28,12 @@ var setCmd = &cobra.Command{
 		var value string
 		if secretValue != "" {
 			value = secretValue
+		} else if secretValueFile != "" {
+			v, err := readSecretFile(secretValueFile)
+			if err != nil {
+				return fmt.Errorf("reading value file: %w", err)
+			}
+			value = v
 		} else {
 			tty, err := openTTY()
 			if err != nil {
@@ -67,6 +74,7 @@ var setCmd = &cobra.Command{
 }
 
 func init() {
-	setCmd.Flags().StringVar(&secretValue, "value", "", "secret value (avoids interactive prompt)")
+	setCmd.Flags().StringVar(&secretValue, "value", "", "secret value (avoids interactive prompt; visible in process list)")
+	setCmd.Flags().StringVar(&secretValueFile, "value-file", "", "read secret value from file (or - for stdin)")
 	rootCmd.AddCommand(setCmd)
 }

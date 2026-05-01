@@ -54,8 +54,8 @@ Encrypts and stores a secret. Prompts for the value interactively.
 
 ```bash
 obscuro set API_KEY
-# or non-interactively
-obscuro set API_KEY --password mypass --value my-secret
+# or non-interactively (from files)
+obscuro set API_KEY --password-file ./pw.txt --value-file ./secret.txt
 ```
 
 ### `obscuro get KEY`
@@ -111,16 +111,21 @@ obscuro auth status   # Check if keychain has a stored password
 | Flag | Short | Scope | Description |
 |------|-------|-------|-------------|
 | `--password` | `-p` | All commands | Master password (skips interactive prompt) |
+| `--password-file` | | All commands | Read master password from file (use `-` for stdin) |
 | `--value` | | `set` only | Secret value (skips interactive prompt) |
+| `--value-file` | | `set` only | Read secret value from file (use `-` for stdin) |
+
+> **Security note:** `--password` and `--value` pass secrets as command-line arguments, which are visible to other users on the system via `ps` or `/proc`. Prefer `--password-file`, `--value-file`, the OS keychain, or the `OBSCURO_PASSWORD` environment variable on shared systems.
 
 ## Password resolution
 
 The master password is resolved in this order:
 
 1. `--password` / `-p` flag
-2. OS keychain (macOS Keychain, Linux Secret Service)
-3. `OBSCURO_PASSWORD` environment variable
-4. Interactive terminal prompt
+2. `--password-file` flag (reads from file, or stdin with `-`)
+3. OS keychain (macOS Keychain, Linux Secret Service)
+4. `OBSCURO_PASSWORD` environment variable
+5. Interactive terminal prompt
 
 During `obscuro init`, you'll be asked to store the password in the OS keychain. Once stored, all subsequent commands (including `inject` as a Helm post-renderer) authenticate automatically with no flags, env vars, or prompts needed.
 

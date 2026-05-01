@@ -195,7 +195,7 @@ func TestRemove(t *testing.T) {
 	_, _, _ = execCmd(t, "set", "API_KEY", "--password", testPassword, "--value", "secret123")
 	_, _, _ = execCmd(t, "set", "DB_PASS", "--password", testPassword, "--value", "dbpass456")
 
-	_, stderr, err := execCmd(t, "remove", "API_KEY")
+	_, stderr, err := execCmd(t, "remove", "API_KEY", "--password", testPassword)
 	if err != nil {
 		t.Fatalf("remove failed: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestRemoveNonExistent(t *testing.T) {
 	setup(t)
 	initVault(t)
 
-	_, _, err := execCmd(t, "remove", "NOPE")
+	_, _, err := execCmd(t, "remove", "NOPE", "--password", testPassword)
 	if err == nil {
 		t.Fatal("expected error for removing non-existent key")
 	}
