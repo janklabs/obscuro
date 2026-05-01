@@ -1,0 +1,40 @@
+---
+title: obscuro auth
+description: Manage OS keychain password storage
+---
+
+## Subcommands
+
+### auth store
+
+```sh
+obscuro auth store
+```
+
+Prompts for your master password and saves it in the OS keychain (keyed by your vault's salt).
+
+### auth clear
+
+```sh
+obscuro auth clear
+```
+
+Removes the stored password from the keychain.
+
+### auth status
+
+```sh
+obscuro auth status
+```
+
+Tells you whether a password is currently saved in the keychain.
+
+## Supported Keychains
+
+| OS      | Backend               |
+| ------- | --------------------- |
+| macOS   | Keychain              |
+| Linux   | Secret Service (DBUS) |
+| Windows | Credential Manager    |
+
+Under the hood, this uses [go-keyring](https://github.com/zalando/go-keyring).

@@ -1,0 +1,19 @@
+---
+title: obscuro get
+description: Decrypt and print a secret
+---
+
+## Usage
+
+```sh
+obscuro get KEY
+```
+
+Decrypts the secret and prints it to stdout. Exits with a non-zero status if the key doesn't exist.
+
+## Example
+
+```sh
+$ obscuro get DB_PASSWORD
+s3cret
+```

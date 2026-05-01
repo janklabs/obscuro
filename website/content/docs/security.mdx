@@ -1,0 +1,53 @@
+---
+title: Security
+description: Cryptographic design and threat model
+---
+
+## Key Derivation
+
+Obscuro derives your encryption key using **Argon2id** — a memory-hard algorithm that makes brute-force attacks expensive:
+
+| Parameter | Value           |
+| --------- | --------------- |
+| Time      | 3 iterations    |
+| Memory    | 64 MB           |
+| Lanes     | 4 (parallelism) |
+| Output    | 32 bytes        |
+
+A random salt is generated when you run `obscuro init` and saved in `config.json`.
+
+## Encryption
+
+All secrets are encrypted with **AES-256-GCM** (authenticated encryption):
+
+- 32-byte key from Argon2id
+- Fresh random 12-byte nonce for every encryption
+- Stored as `base64(nonce || ciphertext)`
+
+GCM gives you both confidentiality and integrity — if anyone tampers with the ciphertext, decryption fails.
+
+## Password Verification
+
+During `init`, Obscuro encrypts the string `"obscuro-verify"` and saves it in `config.json`. On every subsequent operation, it decrypts this token first to check that your password is correct before touching any secrets.
+
+## Threat Model
+
+**You're protected against:**
+
+- Reading secrets from disk without the password
+- Brute-force attacks (Argon2id is memory-hard)
+- Ciphertext tampering (GCM catches it)
+- Secrets leaking into git history as plaintext
+
+**Not in scope:**
+
+- Compromised machines with memory access
+- Keyloggers capturing your master password
+- Weak master passwords (Argon2id helps, but can't save a trivial password)
+
+## Recommendations
+
+- Pick a strong master password — 16+ characters
+- Use the OS keychain so you don't have to type it every time
+- Rotate secrets with `obscuro set KEY` using new values
+- Keep `.obscuro/` committed — it's all encrypted

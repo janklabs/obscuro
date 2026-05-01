@@ -1,0 +1,52 @@
+---
+title: Getting Started
+description: Encrypt secrets in your git repo with Obscuro
+---
+
+Obscuro encrypts your secrets with Argon2id + AES-256-GCM and tucks them into a `.obscuro/` directory at your git repo root. Think of it as a password-protected vault that lives right next to your code.
+
+Its core command, `obscuro inject`, reads any text file, replaces `__KEY__` placeholders with decrypted values, and writes the result to stdout. That means it works with **any deployment tool** — Helm, Docker Compose, Kubernetes manifests, Kustomize, or anything else that uses text-based config.
+
+## Quick Start
+
+Install it:
+
+```sh
+curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | sh
+```
+
+Set up a vault in your repo:
+
+```sh
+obscuro init
+```
+
+You'll pick a master password (and optionally save it to your OS keychain so you don't have to type it every time).
+
+Store a secret:
+
+```sh
+obscuro set DB_PASSWORD --value "s3cret"
+```
+
+Read it back:
+
+```sh
+obscuro get DB_PASSWORD
+```
+
+Use it with Helm (just one option — see guides for Docker Compose and Kubernetes too):
+
+```sh
+helm install myapp ./chart --post-renderer obscuro --post-renderer-args inject
+```
+
+That's it. Obscuro reads the rendered manifests from stdin, replaces `__KEY__` patterns with decrypted values, and writes clean output to stdout.
+
+## Next Steps
+
+- [Installation](/docs/installation) — all the ways to install
+- [Commands](/docs/commands/init) — full command reference
+- [Docker Compose Guide](/docs/guides/docker-compose) — inject secrets into Compose projects
+- [Kubernetes Guide](/docs/guides/kubernetes) — template raw manifests and Kustomize
+- [Helm Integration](/docs/helm-integration) — post-renderer setup

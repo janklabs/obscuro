@@ -1,0 +1,87 @@
+---
+title: Docker Compose
+description: Use Obscuro to inject secrets into Docker Compose projects
+---
+
+Obscuro's `inject` command reads stdin, replaces `__KEY__` placeholders with decrypted secrets, and writes to stdout. That makes it a natural fit for Docker Compose — you keep a template file with placeholders and inject real values right before you run `docker compose up`.
+
+## Setup
+
+Initialize a vault and store your secrets:
+
+```sh
+obscuro init
+obscuro set DB_PASSWORD --value "s3cret"
+obscuro set API_KEY --value "key-12345"
+```
+
+## Injecting into docker-compose.yml
+
+Create a template file with `__KEY__` placeholders:
+
+```yaml
+# docker-compose.template.yml
+services:
+  app:
+    image: myapp:latest
+    environment:
+      DATABASE_URL: "postgres://app:__DB_PASSWORD__@db:5432/mydb"
+      API_KEY: "__API_KEY__"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: "__DB_PASSWORD__"
+```
+
+Inject secrets and bring up your stack:
+
+```sh
+obscuro inject < docker-compose.template.yml > docker-compose.yml
+docker compose up -d
+```
+
+## Injecting into .env files
+
+If you prefer `.env` files, the same approach works. Create a template:
+
+```sh
+# .env.template
+DB_PASSWORD=__DB_PASSWORD__
+API_KEY=__API_KEY__
+REDIS_URL=redis://default:__REDIS_PASSWORD__@cache:6379
+```
+
+Inject and run:
+
+```sh
+obscuro inject < .env.template > .env
+docker compose up -d
+```
+
+## Injecting into config files
+
+This works with any text-based config — nginx configs, JSON settings, whatever. If it has `__KEY__` placeholders, Obscuro will replace them:
+
+```sh
+obscuro inject < nginx.conf.template > nginx.conf
+obscuro inject < config.template.json > config.json
+```
+
+## CI/CD
+
+In automated pipelines, pass the password via environment variable:
+
+```sh
+export OBSCURO_PASSWORD="$VAULT_SECRET"
+obscuro inject < docker-compose.template.yml > docker-compose.yml
+docker compose up -d
+```
+
+## Tips
+
+- Keep template files (`.template.yml`, `.env.template`) committed to git
+- Add the generated output files (`docker-compose.yml`, `.env`) to `.gitignore` so plaintext secrets never end up in your repo
+- The `.obscuro/` directory is safe to commit — it only contains encrypted data

@@ -1,0 +1,79 @@
+---
+title: Helm Integration
+description: Using Obscuro as a Helm post-renderer for secret injection
+---
+
+Obscuro works with any deployment tool that uses text-based config — Docker Compose, plain Kubernetes manifests, Kustomize, and more. See the [Docker Compose](/docs/guides/docker-compose) and [Kubernetes](/docs/guides/kubernetes) guides for other approaches.
+
+This page covers the Helm-specific integration.
+
+## How It Works
+
+Obscuro plugs into Helm as a [post-renderer](https://helm.sh/docs/topics/advanced/#post-rendering). After Helm finishes rendering your templates, it pipes the YAML through Obscuro, which swaps `__KEY__` placeholders for real decrypted values. Here's the flow:
+
+1. Helm renders all templates (Go templating as usual)
+2. Helm pipes the full YAML to `obscuro inject` via stdin
+3. Obscuro finds every `__KEY__` pattern and decrypts the matching secrets
+4. Obscuro writes the final YAML to stdout
+5. Helm applies it to your cluster
+
+## Setup
+
+First, initialize Obscuro in your chart repo:
+
+```sh
+obscuro init
+```
+
+Store the secrets you need:
+
+```sh
+obscuro set DB_PASSWORD --value "production-password"
+obscuro set API_KEY --value "key-12345"
+```
+
+Use `__KEY__` placeholders in your templates:
+
+```yaml
+# templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-secrets
+type: Opaque
+stringData:
+  db-password: "__DB_PASSWORD__"
+  api-key: "__API_KEY__"
+```
+
+Deploy with the post-renderer:
+
+```sh
+helm install myapp ./chart --post-renderer obscuro --post-renderer-args inject
+```
+
+## Upgrade and Template
+
+Works the same way:
+
+```sh
+helm upgrade myapp ./chart --post-renderer obscuro --post-renderer-args inject
+
+# Preview what the rendered output looks like
+helm template ./chart --post-renderer obscuro --post-renderer-args inject
+```
+
+## CI/CD Pipeline
+
+Pass the password via environment variable so there's no interactive prompt:
+
+```sh
+export OBSCURO_PASSWORD="$VAULT_SECRET"
+helm upgrade --install myapp ./chart \
+  --post-renderer obscuro \
+  --post-renderer-args inject
+```
+
+## Git Workflow
+
+Commit `.obscuro/` to your repo — it only contains encrypted data. Your secrets travel with your code, but only someone with the master password can read them.

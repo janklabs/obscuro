@@ -1,0 +1,35 @@
+---
+title: obscuro set
+description: Encrypt and store a secret
+---
+
+## Usage
+
+```sh
+obscuro set KEY [flags]
+```
+
+## Flags
+
+| Flag           | What it does                               |
+| -------------- | ------------------------------------------ |
+| `--value`      | Pass the secret value inline               |
+| `--value-file` | Read value from a file (use `-` for stdin) |
+
+If you don't pass either flag, Obscuro prompts you interactively.
+
+## Examples
+
+```sh
+# Inline value
+obscuro set DB_PASSWORD --value "s3cret"
+
+# From a file
+obscuro set TLS_CERT --value-file ./cert.pem
+
+# From stdin
+echo "token123" | obscuro set API_KEY --value-file -
+
+# Interactive prompt
+obscuro set SECRET_KEY
+```

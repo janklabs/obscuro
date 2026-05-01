@@ -1,0 +1,111 @@
+---
+title: Kubernetes
+description: Use Obscuro to inject secrets into Kubernetes manifests
+---
+
+You don't need Helm to use Obscuro with Kubernetes. The `inject` command works with any YAML — pipe your manifests through it before `kubectl apply` and all `__KEY__` placeholders get replaced with decrypted values.
+
+For Helm-specific usage, see [Helm Integration](/docs/helm-integration).
+
+## Setup
+
+Initialize a vault and store your secrets:
+
+```sh
+obscuro init
+obscuro set DB_PASSWORD --value "s3cret"
+obscuro set API_KEY --value "key-12345"
+```
+
+## Basic Usage
+
+Write your manifests with `__KEY__` placeholders:
+
+```yaml
+# manifests/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+stringData:
+  db-password: "__DB_PASSWORD__"
+  api-key: "__API_KEY__"
+```
+
+Inject and apply in one shot:
+
+```sh
+obscuro inject < manifests/secret.yaml | kubectl apply -f -
+```
+
+Or inject a whole directory by concatenating files first:
+
+```sh
+cat manifests/*.yaml | obscuro inject | kubectl apply -f -
+```
+
+## With Kustomize
+
+If you use Kustomize, pipe its output through `obscuro inject`:
+
+```sh
+kustomize build ./overlays/prod | obscuro inject | kubectl apply -f -
+```
+
+Your Kustomize templates can use `__KEY__` placeholders anywhere — in patches, base manifests, or config map generators:
+
+```yaml
+# overlays/prod/patch-env.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: DATABASE_URL
+              value: "postgres://app:__DB_PASSWORD__@db:5432/mydb"
+            - name: API_KEY
+              value: "__API_KEY__"
+```
+
+## With kubectl dry-run
+
+Preview what your manifests look like after injection without applying them:
+
+```sh
+obscuro inject < manifests/secret.yaml
+```
+
+Or save to a file for inspection:
+
+```sh
+obscuro inject < manifests/secret.yaml > manifests/secret.decrypted.yaml
+```
+
+## CI/CD
+
+Pass the password via environment variable in your pipeline:
+
+```sh
+export OBSCURO_PASSWORD="$VAULT_SECRET"
+cat manifests/*.yaml | obscuro inject | kubectl apply -f -
+```
+
+Or with Kustomize:
+
+```sh
+export OBSCURO_PASSWORD="$VAULT_SECRET"
+kustomize build ./overlays/prod | obscuro inject | kubectl apply -f -
+```
+
+## Tips
+
+- Keep your template manifests (with `__KEY__` placeholders) committed to git
+- Never commit decrypted output files — add them to `.gitignore`
+- The `.obscuro/` directory is safe to commit — it only contains encrypted data
+- Works with any tool that outputs YAML/text to stdout: Kustomize, ytt, jsonnet, etc.

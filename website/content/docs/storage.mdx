@@ -1,0 +1,45 @@
+---
+title: Storage
+description: .obscuro/ directory structure and file schemas
+---
+
+## Directory Location
+
+`.obscuro/` always lives at the root of your git repository. Obscuro finds it by walking up from your current directory, just like git finds `.git/`.
+
+## Permissions
+
+Everything is locked down by default:
+
+| Path                    | Mode |
+| ----------------------- | ---- |
+| `.obscuro/`             | 0700 |
+| `.obscuro/config.json`  | 0600 |
+| `.obscuro/secrets.json` | 0600 |
+
+## config.json
+
+```json
+{
+  "salt": "<base64-encoded-32-byte-salt>",
+  "verify": "<base64(nonce || ciphertext)>"
+}
+```
+
+- `salt` — random bytes for Argon2id key derivation
+- `verify` — encrypted `"obscuro-verify"` string used to check your password
+
+## secrets.json
+
+```json
+{
+  "DB_PASSWORD": "<base64(nonce || ciphertext)>",
+  "API_KEY": "<base64(nonce || ciphertext)>"
+}
+```
+
+A flat key-value map. Each value is `base64(12-byte-nonce || AES-256-GCM-ciphertext)`.
+
+## Git
+
+Both files are safe to commit. They contain only encrypted data — sharing them publicly is fine as long as your master password is strong.

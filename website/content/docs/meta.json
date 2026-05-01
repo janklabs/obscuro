@@ -1,0 +1,16 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "installation",
+    "---Commands---",
+    "commands",
+    "---Configuration---",
+    "configuration",
+    "---Guides---",
+    "guides",
+    "---Reference---",
+    "security",
+    "storage"
+  ]
+}

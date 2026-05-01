@@ -1,0 +1,18 @@
+---
+title: obscuro edit
+description: Edit a secret in your text editor
+---
+
+## Usage
+
+```sh
+obscuro edit KEY
+```
+
+Decrypts the secret, opens it in your `$EDITOR` (defaults to `vi`), and re-encrypts it when you save and close.
+
+## Example
+
+```sh
+EDITOR=nano obscuro edit API_KEY
+```

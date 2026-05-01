@@ -1,0 +1,57 @@
+---
+title: obscuro inject
+description: Replace __KEY__ placeholders in stdin with decrypted secrets
+---
+
+## Usage
+
+```sh
+obscuro inject < input.yaml > output.yaml
+```
+
+Reads stdin, finds every `__KEY__` pattern, replaces it with the decrypted secret, and writes the result to stdout. This works with any text-based file — YAML manifests, `.env` files, config files, whatever.
+
+## Deployment Guides
+
+Obscuro works with any deployment tool. Check out the guides for your setup:
+
+- [Docker Compose](/docs/guides/docker-compose) — inject into `docker-compose.yml` and `.env` files
+- [Kubernetes](/docs/guides/kubernetes) — template raw manifests and Kustomize output
+- [Helm](/docs/helm-integration) — use Obscuro as a Helm post-renderer
+
+## Helm Post-Renderer
+
+One of the most common use cases. Helm post-renderers receive rendered manifests on stdin and write modified manifests to stdout.
+
+```sh
+helm install myapp ./chart --post-renderer obscuro --post-renderer-args inject
+helm upgrade myapp ./chart --post-renderer obscuro --post-renderer-args inject
+helm template ./chart --post-renderer obscuro --post-renderer-args inject
+```
+
+### Example Template
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+stringData:
+  database-url: "postgres://user:__DB_PASSWORD__@db:5432/app"
+  api-key: "__API_KEY__"
+```
+
+After injection, `__DB_PASSWORD__` and `__API_KEY__` get replaced with their decrypted values.
+
+### Placeholder Format
+
+The pattern is `__` + key name + `__`. Key names match whatever you stored with `obscuro set`.
+
+## Standalone Usage
+
+You can also use it outside Helm:
+
+```sh
+cat manifest.yaml | obscuro inject | kubectl apply -f -
+```

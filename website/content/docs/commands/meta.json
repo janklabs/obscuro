@@ -1,0 +1,15 @@
+{
+  "title": "Commands",
+  "pages": [
+    "init",
+    "set",
+    "get",
+    "list",
+    "remove",
+    "edit",
+    "inject",
+    "auth",
+    "upgrade",
+    "version"
+  ]
+}

@@ -1,0 +1,39 @@
+---
+title: obscuro init
+description: Initialize an Obscuro vault in the current git repository
+---
+
+## Usage
+
+```sh
+obscuro init
+```
+
+Sets up the `.obscuro/` directory at your git repo root.
+
+## What Happens
+
+1. You pick a master password (with confirmation)
+2. Obscuro generates a random salt
+3. Derives a key using Argon2id
+4. Encrypts a verification token (`"obscuro-verify"`)
+5. Writes `.obscuro/config.json` with the salt and token
+6. Creates an empty `.obscuro/secrets.json`
+7. Asks if you'd like to save the password in your OS keychain
+
+## Files Created
+
+- `.obscuro/config.json` — salt + verification token (mode 0600)
+- `.obscuro/secrets.json` — where your secrets go (mode 0600)
+- `.obscuro/` directory (mode 0700)
+
+## Example
+
+```sh
+$ obscuro init
+Enter master password:
+Confirm master password:
+Vault initialized at .obscuro/
+Store password in keychain? [y/N]: y
+Password stored in keychain.
+```

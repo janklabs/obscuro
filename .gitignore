@@ -1,2 +1,7 @@
 obscuro
 .obscuro/
+
+# Website
+website/node_modules/
+website/.next/
+website/.source/

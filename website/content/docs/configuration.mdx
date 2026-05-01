@@ -1,0 +1,46 @@
+---
+title: Configuration
+description: Password resolution, environment variables, and global flags
+---
+
+## Global Flags
+
+These flags work with any command:
+
+| Flag              | What it does                                  |
+| ----------------- | --------------------------------------------- |
+| `-p, --password`  | Pass the master password inline               |
+| `--password-file` | Read password from a file (use `-` for stdin) |
+
+## Password Resolution Order
+
+Obscuro checks these sources in order and uses the first one it finds:
+
+1. `--password` flag
+2. `--password-file` flag
+3. OS keychain (keyed by your vault's salt)
+4. `OBSCURO_PASSWORD` environment variable
+5. Interactive TTY prompt
+
+## Environment Variables
+
+| Variable                  | What it does                                   |
+| ------------------------- | ---------------------------------------------- |
+| `OBSCURO_PASSWORD`        | Master password (skips the interactive prompt) |
+| `OBSCURO_NO_UPDATE_CHECK` | Set to `1` to stop update checks               |
+| `EDITOR`                  | Editor for `obscuro edit` (defaults to `vi`)   |
+
+## CI/CD Usage
+
+In automated environments there's no TTY to prompt for a password, so pass it via env var or flag:
+
+```sh
+export OBSCURO_PASSWORD="$VAULT_SECRET"
+obscuro inject < manifests.yaml > decrypted.yaml
+```
+
+Or with a flag:
+
+```sh
+obscuro --password-file /run/secrets/obscuro-pw inject < manifests.yaml
+```
