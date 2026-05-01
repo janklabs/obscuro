@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/janklabs/obscuro/internal/version"
 	"github.com/spf13/cobra"
@@ -50,6 +53,14 @@ func runUpgrade() error {
 	if current != "dev" && semver.Compare(current, latest) >= 0 {
 		fmt.Fprintf(os.Stderr, "Already up to date (%s)\n", current)
 		return nil
+	}
+
+	// Print changelog between versions.
+	if current != "dev" {
+		if changelog := fetchChangelog(current, latest); changelog != "" {
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, changelog)
+		}
 	}
 
 	// Clone and build
@@ -100,6 +111,73 @@ func runUpgrade() error {
 
 func init() {
 	rootCmd.AddCommand(upgradeCmd)
+}
+
+const apiReleasesURL = "https://api.github.com/repos/janklabs/obscuro/releases"
+
+// fetchChangelog returns a formatted changelog string for all releases
+// between current (exclusive) and latest (inclusive). Returns an empty
+// string on any error so that upgrades are never blocked.
+func fetchChangelog(current, latest string) string {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(apiReleasesURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var releases []struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+		Body    string `json:"body"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return ""
+	}
+
+	// Filter to releases between current and latest.
+	var relevant []struct {
+		tag  string
+		body string
+	}
+	for _, r := range releases {
+		if !semver.IsValid(r.TagName) {
+			continue
+		}
+		if semver.Compare(r.TagName, current) > 0 && semver.Compare(r.TagName, latest) <= 0 {
+			body := strings.TrimSpace(r.Body)
+			if body == "" {
+				body = "(no release notes)"
+			}
+			relevant = append(relevant, struct {
+				tag  string
+				body string
+			}{tag: r.TagName, body: body})
+		}
+	}
+
+	if len(relevant) == 0 {
+		return ""
+	}
+
+	// Sort oldest first.
+	sort.Slice(relevant, func(i, j int) bool {
+		return semver.Compare(relevant[i].tag, relevant[j].tag) < 0
+	})
+
+	var b strings.Builder
+	b.WriteString("Changelog:\n")
+	for _, r := range relevant {
+		b.WriteString(fmt.Sprintf("\n  %s\n", r.tag))
+		for _, line := range strings.Split(r.body, "\n") {
+			b.WriteString(fmt.Sprintf("    %s\n", line))
+		}
+	}
+	return b.String()
 }
 
 // fetchLatestTag returns the highest semver tag from the remote repo.
