@@ -39,6 +39,9 @@ const eslintConfig = defineConfig([
       // Disable line-wrapping — its auto-fix creates template literals which
       // conflict with the no-restricted-syntax ban on template literals in className.
       "better-tailwindcss/enforce-consistent-line-wrapping": "off",
+      // Disable class ordering — prettier-plugin-tailwindcss handles this and
+      // conflicts with the eslint plugin's ordering.
+      "better-tailwindcss/enforce-consistent-class-order": "off",
     },
   },
 
