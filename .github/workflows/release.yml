@@ -18,6 +18,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Check for CLI changes
+        id: check
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          CHANGES=$(git diff --name-only "$LAST_TAG"..HEAD -- . ':!website' ':!.github/workflows/website.yml')
+          if [ -n "$CHANGES" ]; then
+            echo "cli_changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: go-semantic-release/action@v1
+        if: steps.check.outputs.cli_changed == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
