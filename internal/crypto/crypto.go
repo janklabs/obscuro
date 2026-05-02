@@ -62,7 +62,7 @@ func Decrypt(key []byte, encoded string) ([]byte, error) {
 		return nil, fmt.Errorf("decoding base64: %w", err)
 	}
 	if len(data) < NonceSize {
-		return nil, errors.New("ciphertext too short")
+		return nil, errors.New("corrupted secret data: ciphertext too short")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {

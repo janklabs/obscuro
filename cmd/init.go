@@ -16,11 +16,11 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize obscuro in the current directory",
+	Short: "Initialize encryption for this repo",
 	Long:  "Creates the .obscuro directory and sets up encryption with a master password.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if store.IsInitialized() {
-			return fmt.Errorf(".obscuro already initialized in this directory")
+			return fmt.Errorf(".obscuro already initialized in this repository")
 		}
 
 		var pw string
@@ -72,7 +72,7 @@ var initCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintln(os.Stderr, "Initialized .obscuro successfully.")
+		fmt.Fprintln(os.Stderr, "Initialized .obscuro.")
 
 		// Offer to store password in OS keychain (only for interactive sessions)
 		if password == "" {

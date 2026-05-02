@@ -35,9 +35,10 @@ var updateCh chan updateResult
 var rootCmd = &cobra.Command{
 	Use:   "obscuro",
 	Short: "Safely store encrypted secrets in your repository",
-	Long: `Obscuro encrypts secrets with a password-derived key (Argon2id + AES-256-GCM)
-and stores them in .obscuro/secrets.json. Secrets can be injected into templates
-by replacing __KEY__ placeholders via stdin/stdout.`,
+	Long: `Encrypt secrets and store them safely in your git repo.
+Use 'obscuro inject' as a Helm post-renderer to replace __KEY__ placeholders at deploy time.
+
+Secrets are encrypted with Argon2id key derivation and AES-256-GCM.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip for commands that already handle versioning.
 		name := cmd.Name()
@@ -175,7 +176,7 @@ func authenticate() ([]byte, error) {
 
 	key := crypto.DeriveKey(pw, salt)
 	if !crypto.VerifyKey(key, cfg.VerificationToken) {
-		return nil, fmt.Errorf("incorrect password")
+		return nil, fmt.Errorf("incorrect password — verify your input or re-initialize with 'obscuro init'")
 	}
 
 	return key, nil

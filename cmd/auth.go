@@ -41,7 +41,7 @@ var authStoreCmd = &cobra.Command{
 
 		key := crypto.DeriveKey(pw, salt)
 		if !crypto.VerifyKey(key, cfg.VerificationToken) {
-			return fmt.Errorf("incorrect password")
+			return fmt.Errorf("incorrect password — verify your input or re-initialize with 'obscuro init'")
 		}
 
 		if err := keychain.Store(cfg.Salt, pw); err != nil {
@@ -77,7 +77,7 @@ var authClearCmd = &cobra.Command{
 
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Check if the master password is stored in the OS keychain",
+	Short: "Check OS keychain status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !store.IsInitialized() {
 			return fmt.Errorf("not initialized — run 'obscuro init' first")

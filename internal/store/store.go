@@ -31,7 +31,7 @@ func RepoRoot() (string, error) {
 	repoRootOnce.Do(func() {
 		out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 		if err != nil {
-			repoRootErr = fmt.Errorf("not inside a git repository")
+			repoRootErr = fmt.Errorf("not inside a git repository — obscuro must be run within a git repo")
 			return
 		}
 		repoRoot = strings.TrimSpace(string(out))

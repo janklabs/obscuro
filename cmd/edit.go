@@ -12,7 +12,7 @@ import (
 
 var editCmd = &cobra.Command{
 	Use:   "edit KEY",
-	Short: "Open a secret in your editor for changes",
+	Short: "Edit a secret in your default editor",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
