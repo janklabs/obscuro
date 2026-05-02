@@ -137,7 +137,7 @@ export function Footer() {
                   Obscuro
                 </span>
               </div>
-              <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
+              <p className="text-muted-foreground max-w-xs text-xs/relaxed">
                 Encrypt secrets. Commit safely. Deploy anywhere.
               </p>
               <div className="text-muted-foreground text-xs">

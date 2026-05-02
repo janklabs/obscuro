@@ -33,13 +33,10 @@ export function TerminalAnimation() {
   >([])
   const [finished, setFinished] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const runIdRef = useRef(0)
 
   useEffect(() => {
-    const runId = ++runIdRef.current
-    setLines([])
-    setFinished(false)
-    const cancelled = () => runIdRef.current !== runId
+    const abortController = new AbortController()
+    const cancelled = () => abortController.signal.aborted
 
     async function run() {
       for (let i = 0; i < SCRIPT.length; i++) {
@@ -84,7 +81,7 @@ export function TerminalAnimation() {
 
     run()
     return () => {
-      runIdRef.current++
+      abortController.abort()
     }
   }, [])
 

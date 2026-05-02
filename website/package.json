@@ -2,18 +2,17 @@
   "name": "website",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "next build",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "dev": "next dev",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "preinstall": "npx only-allow pnpm",
     "lint": "eslint --max-warnings=0 .",
-    "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "start": "next start"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -49,5 +48,6 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "wrangler": "^4.87.0"
-  }
+  },
+  "packageManager": "pnpm@10.33.2"
 }
