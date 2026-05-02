@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "website/**"
+      - ".github/workflows/website.yml"
 
 jobs:
   check:
@@ -16,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: website/package.json
 
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +47,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: website/package.json
 
       - uses: actions/setup-node@v4
         with:
