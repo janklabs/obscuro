@@ -58,13 +58,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - uses: infisical/auth@v2
+      - uses: Infisical/auth-action@v2
         id: infisical-auth
         with:
           domain: ${{ secrets.INFISICAL_API_URL }}
           identity-id: ${{ secrets.INFISICAL_IDENTITY_ID }}
 
-      - uses: infisical/secrets@v2
+      - uses: Infisical/secrets-action@v2
         with:
           domain: ${{ secrets.INFISICAL_API_URL }}
           token: ${{ steps.infisical-auth.outputs.access-token }}
