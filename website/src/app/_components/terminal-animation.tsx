@@ -33,25 +33,29 @@ export function TerminalAnimation() {
   >([])
   const [finished, setFinished] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const cancelRef = useRef(false)
+  const runIdRef = useRef(0)
 
   useEffect(() => {
-    cancelRef.current = false
+    const runId = ++runIdRef.current
+    setLines([])
+    setFinished(false)
+    const cancelled = () => runIdRef.current !== runId
 
     async function run() {
       for (let i = 0; i < SCRIPT.length; i++) {
-        if (cancelRef.current) return
+        if (cancelled()) return
         const line = SCRIPT[i]
 
         if (line.type === "command") {
           if (i > 0) await sleep(PAUSE_BEFORE_COMMAND)
-          if (cancelRef.current) return
+          if (cancelled()) return
 
           setLines((prev) => [...prev, { idx: i, typed: "", done: false }])
 
           for (let c = 1; c <= line.text.length; c++) {
-            if (cancelRef.current) return
+            if (cancelled()) return
             await sleep(TYPE_SPEED)
+            if (cancelled()) return
             const chars = c
             setLines((prev) =>
               prev.map((l) =>
@@ -67,7 +71,7 @@ export function TerminalAnimation() {
           await sleep(PAUSE_AFTER_COMMAND)
         } else {
           await sleep(PAUSE_AFTER_OUTPUT)
-          if (cancelRef.current) return
+          if (cancelled()) return
           setLines((prev) => [
             ...prev,
             { idx: i, typed: line.text, done: true },
@@ -75,12 +79,12 @@ export function TerminalAnimation() {
         }
       }
 
-      if (!cancelRef.current) setFinished(true)
+      if (!cancelled()) setFinished(true)
     }
 
     run()
     return () => {
-      cancelRef.current = true
+      runIdRef.current++
     }
   }, [])
 

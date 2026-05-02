@@ -70,6 +70,7 @@ export default function RootLayout({
         iosevka.variable,
         "dark scroll-smooth",
       )}
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
       <body className="noise-bg scanlines bg-background text-foreground min-h-screen antialiased">
