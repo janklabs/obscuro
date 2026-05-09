@@ -12,7 +12,25 @@ Safely store encrypted secrets in your repository. Obscuro encrypts values with 
 curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash
 ```
 
-This clones the repo, builds the binary, installs it to `~/.local/bin`, and optionally adds it to your `PATH`.
+This downloads the latest prebuilt binary for your OS/architecture from [GitHub Releases](https://github.com/janklabs/obscuro/releases), verifies its SHA-256 checksum, installs it to `~/.local/bin`, and optionally adds it to your `PATH`. No Go toolchain required.
+
+Supported platforms: Linux (amd64, arm64), macOS (amd64, arm64), Windows (amd64, arm64).
+
+To install a specific version or to a custom directory:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | \
+  OBSCURO_VERSION=v1.7.11 OBSCURO_INSTALL_DIR=/usr/local/bin bash
+```
+
+### Manual download
+
+Grab the appropriate archive from [Releases](https://github.com/janklabs/obscuro/releases/latest), verify it against `checksums.txt`, then move it onto your `PATH`:
+
+```bash
+mv obscuro-v1.7.11-linux-amd64 ~/.local/bin/obscuro
+chmod +x ~/.local/bin/obscuro
+```
 
 ### From source
 
@@ -90,7 +108,7 @@ obscuro version
 
 ### `obscuro upgrade`
 
-Upgrades to the latest release. Fetches the latest tag from GitHub, builds from source in a temp directory, and replaces the current binary. Requires Go to be installed.
+Upgrades to the latest release. Downloads the matching prebuilt binary from GitHub, verifies its SHA-256 checksum, and atomically replaces the current binary. No Go toolchain required.
 
 ```bash
 obscuro upgrade

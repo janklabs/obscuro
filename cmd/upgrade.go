@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -17,13 +19,19 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-const repoURL = "https://github.com/janklabs/obscuro.git"
+const (
+	repoOwner = "janklabs"
+	repoName  = "obscuro"
+
+	apiReleasesURL = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases"
+	apiLatestURL   = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases/latest"
+	downloadBase   = "https://github.com/" + repoOwner + "/" + repoName + "/releases/download"
+)
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade obscuro to the latest version",
-	Long: `Fetches the latest release tag from GitHub, builds from source,
-and replaces the current binary. Requires Go to be installed.`,
+	Long:  `Downloads the latest prebuilt release binary from GitHub and replaces the current binary.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := runUpgrade(); err != nil {
 			fmt.Fprintf(os.Stderr, "\nUpgrade failed. You can reinstall manually:\n  curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash\n")
@@ -37,7 +45,6 @@ func runUpgrade() error {
 	current := version.Version
 	fmt.Fprintf(os.Stderr, "Current version: %s\n", current)
 
-	// Fetch latest tag
 	fmt.Fprintln(os.Stderr, "Fetching latest version...")
 	latest, err := fetchLatestTag()
 	if err != nil {
@@ -49,13 +56,11 @@ func runUpgrade() error {
 
 	fmt.Fprintf(os.Stderr, "Latest version: %s\n", latest)
 
-	// Compare versions
 	if current != "dev" && semver.Compare(current, latest) >= 0 {
 		fmt.Fprintf(os.Stderr, "Already up to date (%s)\n", current)
 		return nil
 	}
 
-	// Print changelog between versions.
 	if current != "dev" {
 		if changelog := fetchChangelog(current, latest); changelog != "" {
 			fmt.Fprintln(os.Stderr)
@@ -63,35 +68,40 @@ func runUpgrade() error {
 		}
 	}
 
-	// Clone and build
-	fmt.Fprintf(os.Stderr, "Downloading and building %s...\n", latest)
+	assetName, err := assetNameFor(latest, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+
 	tmpDir, err := os.MkdirTemp("", "obscuro-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cloneCmd := exec.Command("git", "-c", "advice.detachedHead=false", "clone", "--quiet", "--depth", "1", "--branch", latest, repoURL, filepath.Join(tmpDir, "obscuro"))
-	cloneCmd.Stderr = os.Stderr
-	if err := cloneCmd.Run(); err != nil {
-		return fmt.Errorf("cloning repo: %w", err)
+	assetPath := filepath.Join(tmpDir, assetName)
+	assetURL := fmt.Sprintf("%s/%s/%s", downloadBase, latest, assetName)
+
+	fmt.Fprintf(os.Stderr, "Downloading %s...\n", assetName)
+	if err := downloadFile(assetURL, assetPath); err != nil {
+		return fmt.Errorf("downloading binary: %w", err)
 	}
 
-	ldflags := fmt.Sprintf("-X github.com/janklabs/obscuro/internal/version.Version=%s", latest)
-	binaryName := "obscuro"
-	if runtime.GOOS == "windows" {
-		binaryName = "obscuro.exe"
-	}
-	newBinary := filepath.Join(tmpDir, "bin-"+binaryName)
-
-	buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinary, ".")
-	buildCmd.Dir = filepath.Join(tmpDir, "obscuro")
-	buildCmd.Stderr = os.Stderr
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("building: %w", err)
+	sumsURL := fmt.Sprintf("%s/%s/checksums.txt", downloadBase, latest)
+	sumsPath := filepath.Join(tmpDir, "checksums.txt")
+	if err := downloadFile(sumsURL, sumsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not fetch checksums.txt: %v (skipping verification)\n", err)
+	} else {
+		if err := verifyChecksum(assetPath, sumsPath, assetName); err != nil {
+			return fmt.Errorf("verifying checksum: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "Checksum OK")
 	}
 
-	// Replace current binary
+	if err := os.Chmod(assetPath, 0o755); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
+
 	execPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("finding current binary: %w", err)
@@ -101,7 +111,7 @@ func runUpgrade() error {
 		return fmt.Errorf("resolving symlinks: %w", err)
 	}
 
-	if err := atomicReplace(newBinary, execPath); err != nil {
+	if err := atomicReplace(assetPath, execPath); err != nil {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 
@@ -113,11 +123,85 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 }
 
-const apiReleasesURL = "https://api.github.com/repos/janklabs/obscuro/releases"
+func assetNameFor(tag, goos, goarch string) (string, error) {
+	switch goos {
+	case "linux", "darwin", "windows":
+	default:
+		return "", fmt.Errorf("unsupported OS: %s", goos)
+	}
+	switch goarch {
+	case "amd64", "arm64":
+	default:
+		return "", fmt.Errorf("unsupported architecture: %s", goarch)
+	}
+	ext := ""
+	if goos == "windows" {
+		ext = ".exe"
+	}
+	return fmt.Sprintf("obscuro-%s-%s-%s%s", tag, goos, goarch, ext), nil
+}
 
-// fetchChangelog returns a formatted changelog string for all releases
-// between current (exclusive) and latest (inclusive). Returns an empty
-// string on any error so that upgrades are never blocked.
+func downloadFile(url, dst string) error {
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return err
+	}
+	return nil
+}
+
+func verifyChecksum(filePath, sumsPath, name string) error {
+	data, err := os.ReadFile(sumsPath)
+	if err != nil {
+		return err
+	}
+	var expected string
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == name {
+			expected = fields[0]
+			break
+		}
+	}
+	if expected == "" {
+		return fmt.Errorf("no checksum entry for %s", name)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("checksum mismatch: expected=%s actual=%s", expected, actual)
+	}
+	return nil
+}
+
+// fetchChangelog returns a formatted changelog for releases between current
+// (exclusive) and latest (inclusive). Returns an empty string on any error so
+// upgrades are never blocked by changelog issues.
 func fetchChangelog(current, latest string) string {
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(apiReleasesURL)
@@ -139,7 +223,6 @@ func fetchChangelog(current, latest string) string {
 		return ""
 	}
 
-	// Filter to releases between current and latest.
 	var relevant []struct {
 		tag  string
 		body string
@@ -164,7 +247,6 @@ func fetchChangelog(current, latest string) string {
 		return ""
 	}
 
-	// Sort oldest first.
 	sort.Slice(relevant, func(i, j int) bool {
 		return semver.Compare(relevant[i].tag, relevant[j].tag) < 0
 	})
@@ -180,46 +262,40 @@ func fetchChangelog(current, latest string) string {
 	return b.String()
 }
 
-// fetchLatestTag returns the highest semver tag from the remote repo.
 func fetchLatestTag() (string, error) {
-	out, err := exec.Command("git", "ls-remote", "--tags", "--refs", repoURL).Output()
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(apiLatestURL)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 
-	var tags []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "/")
-		tag := parts[len(parts)-1]
-		if semver.IsValid(tag) {
-			tags = append(tags, tag)
-		}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GET %s: %s", apiLatestURL, resp.Status)
 	}
 
-	if len(tags) == 0 {
-		return "", nil
+	var rel struct {
+		TagName string `json:"tag_name"`
 	}
-
-	sort.Slice(tags, func(i, j int) bool {
-		return semver.Compare(tags[i], tags[j]) < 0
-	})
-
-	return tags[len(tags)-1], nil
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", err
+	}
+	if !semver.IsValid(rel.TagName) {
+		return "", fmt.Errorf("invalid tag from GitHub: %q", rel.TagName)
+	}
+	return rel.TagName, nil
 }
 
-// atomicReplace replaces dst with src by writing to a temp file and renaming.
+// atomicReplace replaces dst with src by writing a temp file beside dst and
+// renaming. Same-filesystem rename is required for atomicity.
 func atomicReplace(src, dst string) error {
-	srcFile, err := os.ReadFile(src)
+	srcData, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 
-	// Write next to the destination to ensure same filesystem for rename
 	tmpFile := dst + ".tmp"
-	if err := os.WriteFile(tmpFile, srcFile, 0o755); err != nil {
+	if err := os.WriteFile(tmpFile, srcData, 0o755); err != nil {
 		return err
 	}
 
@@ -227,6 +303,5 @@ func atomicReplace(src, dst string) error {
 		os.Remove(tmpFile)
 		return err
 	}
-
 	return nil
 }
