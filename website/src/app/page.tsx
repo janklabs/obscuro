@@ -14,7 +14,7 @@ import { TerminalAnimation } from "./_components/terminal-animation"
 import Waves from "./_components/waves"
 
 const INSTALL_SCRIPT =
-  "curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | sh"
+  "curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash"
 
 export default function Home() {
   return (
