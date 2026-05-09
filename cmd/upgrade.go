@@ -34,7 +34,7 @@ var upgradeCmd = &cobra.Command{
 	Long:  `Downloads the latest prebuilt release binary from GitHub and replaces the current binary.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := runUpgrade(); err != nil {
-			fmt.Fprintf(os.Stderr, "\nUpgrade failed. You can reinstall manually:\n  curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash\n")
+			fmt.Fprintf(os.Stderr, "\nUpgrade failed. You can reinstall manually:\n  curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | sh\n")
 			return err
 		}
 		return nil

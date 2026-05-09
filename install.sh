@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 REPO="janklabs/obscuro"
 INSTALL_DIR="${OBSCURO_INSTALL_DIR:-$HOME/.local/bin}"
@@ -9,6 +9,15 @@ VERSION="${OBSCURO_VERSION:-latest}"
 info() { printf "\033[1;34m==>\033[0m %s\n" "$1"; }
 warn() { printf "\033[1;33mwarn:\033[0m %s\n" "$1" >&2; }
 err()  { printf "\033[1;31merror:\033[0m %s\n" "$1" >&2; exit 1; }
+
+prompt_yes() {
+  printf "%s" "$1"
+  IFS= read -r answer || answer=""
+  case "$answer" in
+    [Yy]|[Yy][Ee][Ss]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 for cmd in curl uname mktemp; do
   command -v "$cmd" >/dev/null 2>&1 || err "$cmd is required but not installed"
@@ -42,13 +51,10 @@ if [ -x "$INSTALL_DIR/$BINARY" ]; then
   CURRENT=$("$INSTALL_DIR/$BINARY" version 2>/dev/null || echo "unknown")
   printf "\033[1;33m%s is already installed (%s).\033[0m\n" "$BINARY" "$CURRENT"
   if [ -t 0 ]; then
-    read -rp "Reinstall $VERSION? [y/N] " answer
-  else
-    answer="y"
-  fi
-  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-    info "Cancelled."
-    exit 0
+    if ! prompt_yes "Reinstall $VERSION? [y/N] "; then
+      info "Cancelled."
+      exit 0
+    fi
   fi
 fi
 
@@ -104,14 +110,13 @@ if [ ! -t 0 ]; then
   printf "Add it manually by appending to your shell profile:\n  export PATH=\"%s:\$PATH\"\n" "$INSTALL_DIR"
   exit 0
 fi
-read -rp "Add it to your shell profile? [y/N] " answer
 
-if [[ "$answer" =~ ^[Yy]$ ]]; then
+if prompt_yes "Add it to your shell profile? [y/N] "; then
   SHELL_NAME=$(basename "${SHELL:-}")
   case "$SHELL_NAME" in
     zsh)  PROFILE="$HOME/.zshrc" ;;
     bash)
-      if [[ -f "$HOME/.bash_profile" ]]; then
+      if [ -f "$HOME/.bash_profile" ]; then
         PROFILE="$HOME/.bash_profile"
       else
         PROFILE="$HOME/.bashrc"
@@ -121,9 +126,10 @@ if [[ "$answer" =~ ^[Yy]$ ]]; then
     *)    PROFILE="$HOME/.profile" ;;
   esac
 
-  LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
-  if [[ "$SHELL_NAME" == "fish" ]]; then
+  if [ "$SHELL_NAME" = "fish" ]; then
     LINE="set -gx PATH $INSTALL_DIR \$PATH"
+  else
+    LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
   fi
 
   mkdir -p "$(dirname "$PROFILE")"

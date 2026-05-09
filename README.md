@@ -9,7 +9,7 @@ Safely store encrypted secrets in your repository. Obscuro encrypts values with 
 ### One-liner
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | sh
 ```
 
 This downloads the latest prebuilt binary for your OS/architecture from [GitHub Releases](https://github.com/janklabs/obscuro/releases), verifies its SHA-256 checksum, installs it to `~/.local/bin`, and optionally adds it to your `PATH`. No Go toolchain required.
