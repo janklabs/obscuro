@@ -26,6 +26,7 @@ func setup(t *testing.T) {
 	store.ResetRoot()
 	password = ""
 	secretValue = ""
+	injectStrict = false
 }
 
 func execCmd(t *testing.T, args ...string) (string, string, error) {
@@ -255,5 +256,138 @@ func TestEnvVarWrongPassword(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "incorrect password") {
 		t.Fatalf("expected 'incorrect password' error, got: %v", err)
+	}
+}
+
+func TestInjectLenientByDefault(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "KNOWN", "--password", testPassword, "--value", "known-value")
+
+	input := "a: __KNOWN__\nb: __UNKNOWN__\n"
+	rootCmd.SetIn(strings.NewReader(input))
+
+	stdout, stderr, err := execCmd(t, "inject", "--password", testPassword)
+	if err != nil {
+		t.Fatalf("inject failed: %v", err)
+	}
+	if !strings.Contains(stdout, "a: known-value") {
+		t.Fatalf("expected substituted KNOWN value in stdout, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "__UNKNOWN__") {
+		t.Fatalf("expected literal __UNKNOWN__ preserved in stdout, got: %q", stdout)
+	}
+	if !strings.Contains(stderr, "unresolved placeholders: UNKNOWN") {
+		t.Fatalf("expected unresolved warning in stderr, got: %q", stderr)
+	}
+}
+
+func TestInjectStrictFlagFails(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "KNOWN", "--password", testPassword, "--value", "known-value")
+
+	input := "a: __KNOWN__\nb: __UNKNOWN__\n"
+	rootCmd.SetIn(strings.NewReader(input))
+
+	stdout, stderr, err := execCmd(t, "inject", "--password", testPassword, "--strict")
+	if err == nil {
+		t.Fatal("expected error in strict mode with unresolved placeholder")
+	}
+	if stdout != "" {
+		t.Fatalf("expected empty stdout in strict mode, got: %q", stdout)
+	}
+	if !strings.Contains(stderr, "unresolved placeholders: UNKNOWN") {
+		t.Fatalf("expected unresolved warning in stderr, got: %q", stderr)
+	}
+}
+
+func TestInjectStrictEnvFails(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "KNOWN", "--password", testPassword, "--value", "known-value")
+
+	input := "a: __KNOWN__\nb: __UNKNOWN__\n"
+	rootCmd.SetIn(strings.NewReader(input))
+
+	t.Setenv("OBSCURO_INJECT_STRICT", "1")
+
+	stdout, _, err := execCmd(t, "inject", "--password", testPassword)
+	if err == nil {
+		t.Fatal("expected error when OBSCURO_INJECT_STRICT=1 with unresolved placeholder")
+	}
+	if stdout != "" {
+		t.Fatalf("expected empty stdout in strict env mode, got: %q", stdout)
+	}
+}
+
+func TestInjectOnlyDecryptsReferenced(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, _, _ = execCmd(t, "set", "A", "--password", testPassword, "--value", "alpha")
+	_, _, _ = execCmd(t, "set", "B", "--password", testPassword, "--value", "bravo")
+	_, _, _ = execCmd(t, "set", "C", "--password", testPassword, "--value", "charlie")
+
+	secrets, err := store.LoadSecrets()
+	if err != nil {
+		t.Fatalf("load secrets: %v", err)
+	}
+	secrets["B"] = "!!!"
+	if err := store.SaveSecrets(secrets); err != nil {
+		t.Fatalf("save secrets: %v", err)
+	}
+
+	input := "only: __A__\n"
+	rootCmd.SetIn(strings.NewReader(input))
+
+	stdout, _, err := execCmd(t, "inject", "--password", testPassword)
+	if err != nil {
+		t.Fatalf("inject failed (B should not be decrypted): %v", err)
+	}
+	if !strings.Contains(stdout, "only: alpha") {
+		t.Fatalf("expected substituted A value, got: %q", stdout)
+	}
+}
+
+func TestAuthClearIdempotent(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, stderr, err := execCmd(t, "auth", "clear")
+	if err != nil {
+		t.Fatalf("auth clear should be idempotent, got error: %v", err)
+	}
+	if !strings.Contains(stderr, "no keychain entry") {
+		t.Fatalf("expected stderr to mention 'no keychain entry', got: %q", stderr)
+	}
+}
+
+func TestAuthStatusShowsSaltAndPath(t *testing.T) {
+	if os.Getenv("OBSCURO_TEST_KEYCHAIN") != "1" {
+		t.Skip("set OBSCURO_TEST_KEYCHAIN=1 to run keychain-dependent tests")
+	}
+	setup(t)
+	initVault(t)
+
+	if _, _, err := execCmd(t, "auth", "store", "--password", testPassword); err != nil {
+		t.Fatalf("auth store failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _, _ = execCmd(t, "auth", "clear")
+	})
+
+	stdout, _, err := execCmd(t, "auth", "status")
+	if err != nil {
+		t.Fatalf("auth status failed: %v", err)
+	}
+	if !strings.Contains(stdout, "Salt fingerprint:") {
+		t.Fatalf("expected stdout to contain 'Salt fingerprint:', got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "Repo:") {
+		t.Fatalf("expected stdout to contain 'Repo:', got: %q", stdout)
 	}
 }

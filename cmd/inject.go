@@ -33,13 +33,11 @@ be resolved; in strict mode no output is written to stdout on failure.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		strict := injectStrict || os.Getenv("OBSCURO_INJECT_STRICT") == "1"
 
-		// Read all stdin first.
 		input, err := io.ReadAll(cmd.InOrStdin())
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
 		}
 
-		// Scan for referenced placeholder names.
 		referencedSet := map[string]struct{}{}
 		for _, m := range placeholderRe.FindAllSubmatch(input, -1) {
 			referencedSet[string(m[1])] = struct{}{}
@@ -55,7 +53,6 @@ be resolved; in strict mode no output is written to stdout on failure.`,
 			return err
 		}
 
-		// Decrypt only referenced secrets; track unresolved.
 		decrypted := make(map[string]string, len(referencedSet))
 		var unresolved []string
 		for name := range referencedSet {
@@ -72,7 +69,6 @@ be resolved; in strict mode no output is written to stdout on failure.`,
 		}
 		sort.Strings(unresolved)
 
-		// Replace placeholders and track which were injected.
 		output := string(input)
 		var injected []string
 		for name, value := range decrypted {
@@ -85,17 +81,14 @@ be resolved; in strict mode no output is written to stdout on failure.`,
 		}
 		sort.Strings(injected)
 
-		// Always warn about unresolved placeholders to stderr.
 		if len(unresolved) > 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: unresolved placeholders: %s\n", strings.Join(unresolved, ", "))
 		}
 
-		// In strict mode with unresolved placeholders, fail without writing stdout.
 		if strict && len(unresolved) > 0 {
 			return fmt.Errorf("unresolved placeholders: %s", strings.Join(unresolved, ", "))
 		}
 
-		// Summary to stderr (Windows-safe; no /dev/tty dependency).
 		if len(injected) > 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Injected: %s\n", strings.Join(injected, ", "))
 		} else if len(unresolved) == 0 {
