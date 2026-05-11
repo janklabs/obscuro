@@ -38,6 +38,7 @@ var (
 	cosignCertIdentityRegex           = `https://github\.com/janklabs/obscuro/\.github/workflows/release\.yml@.*`
 	cosignOIDCIssuer                  = `https://token.actions.githubusercontent.com`
 	lookPath                          = exec.LookPath // test seam
+	replaceBinary                     = atomicReplace // test seam
 	upgradeStderr           io.Writer = os.Stderr
 )
 
@@ -160,7 +161,7 @@ func runUpgradeFromURLs(currentVersion, latestTagAPIURL, downloadBaseURL, releas
 		return fmt.Errorf("resolving symlinks: %w", err)
 	}
 
-	if err := atomicReplace(assetPath, execPath); err != nil {
+	if err := replaceBinary(assetPath, execPath); err != nil {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 

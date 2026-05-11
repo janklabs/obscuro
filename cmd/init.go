@@ -11,8 +11,10 @@ import (
 	"github.com/janklabs/obscuro/internal/keychain"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
+
+// offerKeychainConfirmFn is a seam for testing keychain confirmation prompts.
+var offerKeychainConfirmFn = confirmKeychainStore
 
 var initCmd = &cobra.Command{
 	Use:          "init",
@@ -29,33 +31,21 @@ var initCmd = &cobra.Command{
 		if password != "" {
 			pw = password
 		} else {
-			tty, err := openTTY()
+			pw1, err := promptPasswordFn("Enter master password: ")
 			if err != nil {
-				return fmt.Errorf("cannot open terminal for password prompt: %w", err)
-			}
-			defer tty.Close()
-
-			fmt.Fprint(tty, "Enter master password: ")
-			pw1, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(tty)
-			if err != nil {
-				return fmt.Errorf("reading password: %w", err)
+				return err
 			}
 			if len(pw1) == 0 {
 				return fmt.Errorf("password cannot be empty")
 			}
-
-			fmt.Fprint(tty, "Confirm master password: ")
-			pw2, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(tty)
+			pw2, err := promptPasswordFn("Confirm master password: ")
 			if err != nil {
-				return fmt.Errorf("reading password: %w", err)
+				return err
 			}
-
-			if string(pw1) != string(pw2) {
+			if pw1 != pw2 {
 				return fmt.Errorf("passwords do not match")
 			}
-			pw = string(pw1)
+			pw = pw1
 		}
 
 		salt, err := crypto.GenerateSalt()
@@ -85,26 +75,39 @@ var initCmd = &cobra.Command{
 	},
 }
 
-// offerKeychainStore prompts the user to store the password in the OS keychain.
-// Silently skips if no TTY is available (non-interactive / CI).
-func offerKeychainStore(pw, salt string) {
+// confirmKeychainStore prompts the user via TTY to confirm storing password in keychain.
+// Returns the user's answer (lowercased, trimmed) and whether a TTY was available.
+func confirmKeychainStore(prompt string) (string, bool) {
 	tty, err := openTTY()
 	if err != nil {
-		return
+		return "", false
 	}
 	defer tty.Close()
 
-	fmt.Fprint(tty, "Store password in OS keychain? [Y/n] ")
+	fmt.Fprint(tty, prompt)
 	reader := bufio.NewReader(tty)
 	answer, _ := reader.ReadString('\n')
 	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer, true
+}
+
+// offerKeychainStore prompts the user to store the password in the OS keychain.
+// Silently skips if no TTY is available (non-interactive / CI).
+func offerKeychainStore(pw, salt string) {
+	answer, hasTTY := offerKeychainConfirmFn("Store password in OS keychain? [Y/n] ")
+	if !hasTTY {
+		return
+	}
 
 	if answer == "" || answer == "y" || answer == "yes" {
 		if err := keychain.Store(salt, pw); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not store in keychain: %v\n", err)
 			return
 		}
-		fmt.Fprintln(tty, "Password stored in OS keychain.")
+		if tty, err := openTTY(); err == nil {
+			fmt.Fprintln(tty, "Password stored in OS keychain.")
+			tty.Close()
+		}
 	}
 }
 

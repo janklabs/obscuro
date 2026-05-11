@@ -7,7 +7,6 @@ import (
 	"github.com/janklabs/obscuro/internal/crypto"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var secretValue string
@@ -36,19 +35,11 @@ var setCmd = &cobra.Command{
 			}
 			value = v
 		} else {
-			tty, err := openTTY()
-			if err != nil {
-				return fmt.Errorf("cannot open terminal for secret prompt: %w", err)
-			}
-			defer tty.Close()
-
-			fmt.Fprint(tty, "Enter secret value: ")
-			raw, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(tty)
+			v, err := promptPasswordFn("Enter secret value: ")
 			if err != nil {
 				return fmt.Errorf("reading secret: %w", err)
 			}
-			value = string(raw)
+			value = v
 		}
 
 		if len(value) == 0 {

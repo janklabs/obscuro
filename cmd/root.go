@@ -24,6 +24,9 @@ var passwordFile string
 // Tests can override this to capture output.
 var Stdout io.Writer = os.Stdout
 
+// promptPasswordFn is a seam for testing password prompts.
+var promptPasswordFn = promptPassword
+
 // updateResult carries the result of a background update check.
 type updateResult struct {
 	latest string
@@ -130,6 +133,11 @@ func getPassword(prompt string, salt string) (string, error) {
 	}
 
 	// 4. Interactive prompt
+	return promptPasswordFn(prompt)
+}
+
+// promptPassword opens a TTY and reads a password from the user.
+func promptPassword(prompt string) (string, error) {
 	tty, err := openTTY()
 	if err != nil {
 		return "", fmt.Errorf("cannot open terminal for password prompt: %w", err)
