@@ -47,6 +47,8 @@ if [ "$VERSION" = "latest" ]; then
   [ -n "$VERSION" ] || err "Could not determine latest version"
 fi
 
+SKIP="${OBSCURO_INSECURE_SKIP_CHECKSUM:-0}"
+
 if [ -x "$INSTALL_DIR/$BINARY" ]; then
   CURRENT=$("$INSTALL_DIR/$BINARY" version 2>/dev/null || echo "unknown")
   printf "\033[1;33m%s is already installed (%s).\033[0m\n" "$BINARY" "$CURRENT"
@@ -70,6 +72,7 @@ if ! curl -fsSL -o "$TMPDIR/$ASSET" "$URL"; then
   err "Failed to download $URL (no prebuilt binary for ${OS}/${ARCH} in ${VERSION}?)"
 fi
 
+# OBSCURO_INSECURE_SKIP_CHECKSUM=1 bypasses SHA-256 verification (UNSAFE)
 info "Downloading checksums..."
 if curl -fsSL -o "$TMPDIR/checksums.txt" "$SUMS_URL"; then
   info "Verifying checksum..."
@@ -78,8 +81,12 @@ if curl -fsSL -o "$TMPDIR/checksums.txt" "$SUMS_URL"; then
   elif command -v shasum >/dev/null 2>&1; then
     SHASUM="shasum -a 256"
   else
-    warn "No sha256sum/shasum found; skipping checksum verification"
-    SHASUM=""
+    if [ "$SKIP" = "1" ]; then
+      warn "No sha256 tool available; skipping verification (OBSCURO_INSECURE_SKIP_CHECKSUM=1) — UNSAFE"
+      SHASUM=""
+    else
+      err "Need sha256sum or shasum to verify download. Install one (e.g., 'apt install coreutils' or it is bundled with macOS), or set OBSCURO_INSECURE_SKIP_CHECKSUM=1 to bypass (UNSAFE)."
+    fi
   fi
 
   if [ -n "$SHASUM" ]; then
@@ -92,7 +99,11 @@ if curl -fsSL -o "$TMPDIR/checksums.txt" "$SUMS_URL"; then
     info "Checksum OK"
   fi
 else
-  warn "Could not fetch checksums.txt; skipping verification"
+  if [ "$SKIP" = "1" ]; then
+    warn "Skipping checksum verification (OBSCURO_INSECURE_SKIP_CHECKSUM=1) — UNSAFE"
+  else
+    err "Failed to download checksums.txt from $SUMS_URL. Set OBSCURO_INSECURE_SKIP_CHECKSUM=1 to bypass (UNSAFE)."
+  fi
 fi
 
 mkdir -p "$INSTALL_DIR"
