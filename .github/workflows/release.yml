@@ -39,6 +39,9 @@ jobs:
     needs: release
     if: ${{ needs.release.outputs.version != '' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     env:
       VERSION: v${{ needs.release.outputs.version }}
     steps:
@@ -80,6 +83,34 @@ jobs:
         run: |
           sha256sum obscuro-* > checksums.txt
           cat checksums.txt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign release artifacts (cosign keyless)
+        working-directory: dist
+        env:
+          COSIGN_YES: 'true'
+        run: |
+          set -euo pipefail
+          # Keyless signing using GitHub's OIDC token. Verify with:
+          #   cosign verify-blob \
+          #     --certificate-identity-regexp 'https://github.com/janklabs/obscuro/.github/workflows/release\.yml@.*' \
+          #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          #     --signature obscuro-vX.Y.Z-linux-amd64.sig \
+          #     --certificate obscuro-vX.Y.Z-linux-amd64.pem \
+          #     obscuro-vX.Y.Z-linux-amd64
+          for f in obscuro-* checksums.txt; do
+            [ -f "$f" ] || continue
+            echo "Signing $f"
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+          ls -la
 
       - name: Upload assets to release
         env:
