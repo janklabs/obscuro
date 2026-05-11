@@ -23,6 +23,8 @@ curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | \
   OBSCURO_VERSION=v1.7.11 OBSCURO_INSTALL_DIR=/usr/local/bin bash
 ```
 
+> **UNSAFE opt-out:** Setting `OBSCURO_INSECURE_SKIP_CHECKSUM=1` causes the installer to skip SHA-256 verification of the downloaded binary. This defeats the integrity check that protects you from tampered downloads or a compromised mirror. Don't use it unless you have a specific reason (for example, debugging the installer itself), and never use it in CI or production setups.
+
 ### Manual download
 
 Grab the appropriate archive from [Releases](https://github.com/janklabs/obscuro/releases/latest), verify it against `checksums.txt`, then move it onto your `PATH`:
@@ -84,9 +86,30 @@ Decrypts and prints a secret value to stdout.
 obscuro get API_KEY --password mypass
 ```
 
+### `obscuro edit KEY`
+
+Opens an existing secret in your default editor (`$EDITOR`, falling back to `vi`). The decrypted value is written to a temporary file with `0600` permissions, the editor is launched against that file, and the result is re-encrypted on save. If the value is unchanged the vault is not rewritten.
+
+```bash
+obscuro edit API_KEY
+```
+
+> **Security note:** The decrypted value is written to a temporary file while the editor is open. Editor swap, undo, or backup files (`.swp`, `~`, etc.) may create additional copies on disk. The temp file is deleted when the command exits and is created with restrictive permissions, but this is a defense-in-depth measure, not a forensic guarantee. Avoid editing secrets on shared or untrusted hosts.
+
+### `obscuro remove KEY`
+
+Removes a secret from the vault. Aliased as `obscuro rm`. Requires authentication so a casual reader cannot delete entries.
+
+```bash
+obscuro remove API_KEY
+obscuro rm DB_PASS
+```
+
 ### `obscuro list`
 
-Lists all stored secret names (no password required).
+Lists all stored secret names. **No password is required**, by design. `list` is meant for use in scripts, CI, and shell completion.
+
+> **Metadata leakage:** Secret *names* are stored as plaintext keys in `.obscuro/secrets.json` and are visible to anyone with read access to the repository, with no password needed. Only the *values* are encrypted. Don't put sensitive information (customer names, internal hostnames, ticket numbers) in secret names. Treat them as public.
 
 ### `obscuro inject`
 
@@ -95,6 +118,13 @@ Reads stdin, replaces all `__KEY__` placeholders with decrypted values, writes t
 ```bash
 echo "token: __API_KEY__" | obscuro inject --password mypass
 # Output: token: my-secret
+```
+
+By default, placeholders that don't match a stored secret are left in place and a warning is printed to stderr. Pass `--strict` (or set `OBSCURO_INJECT_STRICT=1`) to make `inject` fail with a non-zero exit code if any `__KEY__` placeholder in the input has no matching secret. Useful in CI to catch typos before they reach a cluster.
+
+```bash
+obscuro inject --strict < manifest.yaml > rendered.yaml
+OBSCURO_INJECT_STRICT=1 helm install myrelease ./chart --post-renderer obscuro --post-renderer-args inject
 ```
 
 ### `obscuro version`
