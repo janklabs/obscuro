@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +35,9 @@ func setup(t *testing.T) {
 	secretValue = ""
 	injectStrict = false
 	upgradeSkipChecksum = false
+	upgradeRequireSignature = false
+	lookPath = exec.LookPath
+	upgradeStderr = os.Stderr
 }
 
 func execCmd(t *testing.T, args ...string) (string, string, error) {
@@ -511,5 +517,109 @@ func TestUpgradeSkipChecksumOptOut(t *testing.T) {
 	)
 	if err != nil && strings.Contains(err.Error(), "downloading checksums") {
 		t.Fatalf("opt-out should bypass the checksum download error, got: %v", err)
+	}
+}
+
+func newUpgradeSigTestServer(t *testing.T, withSigArtifacts bool) *httptest.Server {
+	t.Helper()
+	assetBytes := []byte("fake-binary-bytes")
+	sum := sha256.Sum256(assetBytes)
+	assetName := fmt.Sprintf("obscuro-v99.99.99-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		assetName += ".exe"
+	}
+	checksumsBody := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), assetName)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v99.99.99"}`))
+	})
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/download/v99.99.99/", func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/checksums.txt"):
+			_, _ = w.Write([]byte(checksumsBody))
+		case strings.HasSuffix(r.URL.Path, ".sig"), strings.HasSuffix(r.URL.Path, ".pem"):
+			if !withSigArtifacts {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte("dummy-signature-or-cert-bytes"))
+		default:
+			_, _ = w.Write(assetBytes)
+		}
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestUpgradeRequireSignatureFailsWhenSigMissing(t *testing.T) {
+	setup(t)
+	srv := newUpgradeSigTestServer(t, false)
+	defer srv.Close()
+
+	upgradeRequireSignature = true
+
+	err := runUpgradeFromURLs(
+		"v0.0.1",
+		srv.URL+"/releases/latest",
+		srv.URL+"/download",
+		srv.URL+"/releases",
+	)
+	if err == nil {
+		t.Fatal("expected error when signature artifacts unavailable in require mode")
+	}
+	if !strings.Contains(err.Error(), "cosign signature artifacts unavailable") {
+		t.Fatalf("expected error to mention 'cosign signature artifacts unavailable', got: %v", err)
+	}
+}
+
+func TestUpgradeOpportunisticTolerantWhenSigMissing(t *testing.T) {
+	setup(t)
+	srv := newUpgradeSigTestServer(t, false)
+	defer srv.Close()
+
+	var stderr bytes.Buffer
+	rootCmd.SetErr(&stderr)
+	upgradeCmd.SetErr(&stderr)
+	defer upgradeCmd.SetErr(nil)
+	upgradeStderr = &stderr
+
+	err := runUpgradeFromURLs(
+		"v0.0.1",
+		srv.URL+"/releases/latest",
+		srv.URL+"/download",
+		srv.URL+"/releases",
+	)
+	if err != nil && strings.Contains(err.Error(), "cosign signature artifacts unavailable") {
+		t.Fatalf("opportunistic mode must not fail on missing signature artifacts, got: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "no cosign signature available") {
+		t.Fatalf("expected stderr warning about missing cosign signature, got: %q", stderr.String())
+	}
+}
+
+func TestUpgradeRequireSignatureFailsWhenCosignMissing(t *testing.T) {
+	setup(t)
+	srv := newUpgradeSigTestServer(t, true)
+	defer srv.Close()
+
+	upgradeRequireSignature = true
+	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+
+	err := runUpgradeFromURLs(
+		"v0.0.1",
+		srv.URL+"/releases/latest",
+		srv.URL+"/download",
+		srv.URL+"/releases",
+	)
+	if err == nil {
+		t.Fatal("expected error when cosign binary is missing in require mode")
+	}
+	if !strings.Contains(err.Error(), "cosign binary required") {
+		t.Fatalf("expected error to mention 'cosign binary required', got: %v", err)
 	}
 }

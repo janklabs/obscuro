@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -31,6 +32,14 @@ var (
 )
 
 var upgradeSkipChecksum bool
+
+var (
+	upgradeRequireSignature bool
+	cosignCertIdentityRegex           = `https://github\.com/janklabs/obscuro/\.github/workflows/release\.yml@.*`
+	cosignOIDCIssuer                  = `https://token.actions.githubusercontent.com`
+	lookPath                          = exec.LookPath // test seam
+	upgradeStderr           io.Writer = os.Stderr
+)
 
 var upgradeCmd = &cobra.Command{
 	Use:          "upgrade",
@@ -119,6 +128,25 @@ func runUpgradeFromURLs(currentVersion, latestTagAPIURL, downloadBaseURL, releas
 		fmt.Fprintln(os.Stderr, "Checksum OK")
 	}
 
+	requireSig := upgradeRequireSignature || os.Getenv("OBSCURO_REQUIRE_COSIGN") == "1"
+	sigURL := fmt.Sprintf("%s/%s/%s.sig", downloadBaseURL, latest, assetName)
+	certURL := fmt.Sprintf("%s/%s/%s.pem", downloadBaseURL, latest, assetName)
+	sigPath := filepath.Join(tmpDir, assetName+".sig")
+	certPath := filepath.Join(tmpDir, assetName+".pem")
+
+	sigErr := downloadFile(sigURL, sigPath)
+	certErr := downloadFile(certURL, certPath)
+	if sigErr != nil || certErr != nil {
+		if requireSig {
+			return fmt.Errorf("cosign signature artifacts unavailable for %s (set --require-signature=false or unset OBSCURO_REQUIRE_COSIGN to bypass)", assetName)
+		}
+		fmt.Fprintln(upgradeStderr, "note: no cosign signature available for this release (acceptable for legacy releases; opt into enforcement with --require-signature)")
+	} else {
+		if err := verifyCosignSignature(assetPath, sigPath, certPath, requireSig, upgradeStderr); err != nil {
+			return err
+		}
+	}
+
 	if err := os.Chmod(assetPath, 0o755); err != nil {
 		return fmt.Errorf("chmod: %w", err)
 	}
@@ -142,7 +170,35 @@ func runUpgradeFromURLs(currentVersion, latestTagAPIURL, downloadBaseURL, releas
 
 func init() {
 	upgradeCmd.Flags().BoolVar(&upgradeSkipChecksum, "insecure-skip-checksum", false, "skip SHA-256 verification of the downloaded binary (UNSAFE)")
+	upgradeCmd.Flags().BoolVar(&upgradeRequireSignature, "require-signature", false, "require cosign signature verification (default: warn-only)")
 	rootCmd.AddCommand(upgradeCmd)
+}
+
+func verifyCosignSignature(binaryPath, sigPath, certPath string, requireSig bool, stderr io.Writer) error {
+	path, err := lookPath("cosign")
+	if err != nil {
+		if requireSig {
+			return fmt.Errorf("cosign binary required for signature verification but not in PATH; install from https://github.com/sigstore/cosign/releases or unset OBSCURO_REQUIRE_COSIGN: %w", err)
+		}
+		fmt.Fprintln(stderr, "note: cosign not in PATH; skipping signature verification (install cosign for stronger supply-chain guarantees)")
+		return nil
+	}
+	cmd := exec.Command(path, "verify-blob",
+		"--certificate-identity-regexp", cosignCertIdentityRegex,
+		"--certificate-oidc-issuer", cosignOIDCIssuer,
+		"--signature", sigPath,
+		"--certificate", certPath,
+		binaryPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if requireSig {
+			return fmt.Errorf("cosign verification failed: %s: %w", string(out), err)
+		}
+		fmt.Fprintf(stderr, "warning: cosign verification failed (non-fatal in opportunistic mode): %s\n", string(out))
+		return nil
+	}
+	fmt.Fprintln(stderr, "cosign signature verified")
+	return nil
 }
 
 func assetNameFor(tag, goos, goarch string) (string, error) {
