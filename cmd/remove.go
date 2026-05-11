@@ -8,10 +8,11 @@ import (
 )
 
 var removeCmd = &cobra.Command{
-	Use:     "remove KEY",
-	Aliases: []string{"rm"},
-	Short:   "Remove a secret",
-	Args:    cobra.ExactArgs(1),
+	Use:          "remove KEY",
+	Aliases:      []string{"rm"},
+	Short:        "Remove a secret",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 

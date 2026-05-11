@@ -124,7 +124,7 @@ func getPassword(prompt string, salt string) (string, error) {
 		}
 	}
 
-	// 3. Environment variable
+	// 4. Environment variable
 	if pw := os.Getenv("OBSCURO_PASSWORD"); pw != "" {
 		return pw, nil
 	}

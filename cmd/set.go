@@ -14,9 +14,10 @@ var secretValue string
 var secretValueFile string
 
 var setCmd = &cobra.Command{
-	Use:   "set KEY",
-	Short: "Set an encrypted secret",
-	Args:  cobra.ExactArgs(1),
+	Use:          "set KEY",
+	Short:        "Set an encrypted secret",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 

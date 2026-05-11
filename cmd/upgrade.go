@@ -29,9 +29,10 @@ const (
 )
 
 var upgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Upgrade obscuro to the latest version",
-	Long:  `Downloads the latest prebuilt release binary from GitHub and replaces the current binary.`,
+	Use:          "upgrade",
+	Short:        "Upgrade obscuro to the latest version",
+	Long:         `Downloads the latest prebuilt release binary from GitHub and replaces the current binary.`,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := runUpgrade(); err != nil {
 			fmt.Fprintf(os.Stderr, "\nUpgrade failed. You can reinstall manually:\n  curl -sSL https://raw.githubusercontent.com/janklabs/obscuro/main/install.sh | sh\n")

@@ -115,6 +115,22 @@ func TestWrongPassword(t *testing.T) {
 	}
 }
 
+func TestWrongPasswordDoesNotPrintUsage(t *testing.T) {
+	setup(t)
+	initVault(t)
+
+	_, stderr, err := execCmd(t, "get", "SOMEKEY", "--password", "wrong")
+	if err == nil {
+		t.Fatal("expected error for wrong password")
+	}
+	if strings.Contains(stderr, "Usage:") {
+		t.Fatalf("stderr should not contain 'Usage:', got: %s", stderr)
+	}
+	if strings.Contains(stderr, "Global Flags:") {
+		t.Fatalf("stderr should not contain 'Global Flags:', got: %s", stderr)
+	}
+}
+
 func TestList(t *testing.T) {
 	setup(t)
 	initVault(t)

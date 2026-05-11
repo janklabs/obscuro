@@ -9,9 +9,10 @@ import (
 )
 
 var getCmd = &cobra.Command{
-	Use:   "get KEY",
-	Short: "Decrypt and print a secret value",
-	Args:  cobra.ExactArgs(1),
+	Use:          "get KEY",
+	Short:        "Decrypt and print a secret value",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 

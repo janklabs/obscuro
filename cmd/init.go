@@ -15,9 +15,10 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize encryption for this repo",
-	Long:  "Creates the .obscuro directory and sets up encryption with a master password.",
+	Use:          "init",
+	Short:        "Initialize encryption for this repo",
+	Long:         "Creates the .obscuro directory and sets up encryption with a master password.",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if store.IsInitialized() {
 			return fmt.Errorf(".obscuro already initialized in this repository")

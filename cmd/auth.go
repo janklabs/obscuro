@@ -16,8 +16,9 @@ var authCmd = &cobra.Command{
 }
 
 var authStoreCmd = &cobra.Command{
-	Use:   "store",
-	Short: "Store the master password in the OS keychain",
+	Use:          "store",
+	Short:        "Store the master password in the OS keychain",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !store.IsInitialized() {
 			return fmt.Errorf("not initialized — run 'obscuro init' first")
@@ -54,8 +55,9 @@ var authStoreCmd = &cobra.Command{
 }
 
 var authClearCmd = &cobra.Command{
-	Use:   "clear",
-	Short: "Remove the master password from the OS keychain",
+	Use:          "clear",
+	Short:        "Remove the master password from the OS keychain",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !store.IsInitialized() {
 			return fmt.Errorf("not initialized — run 'obscuro init' first")
@@ -64,6 +66,11 @@ var authClearCmd = &cobra.Command{
 		cfg, err := store.LoadConfig()
 		if err != nil {
 			return err
+		}
+
+		if !keychain.HasEntry(cfg.Salt) {
+			fmt.Fprintln(os.Stderr, "no keychain entry found (nothing to clear)")
+			return nil
 		}
 
 		if err := keychain.Delete(cfg.Salt); err != nil {
@@ -76,8 +83,9 @@ var authClearCmd = &cobra.Command{
 }
 
 var authStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Check OS keychain status",
+	Use:          "status",
+	Short:        "Check OS keychain status",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !store.IsInitialized() {
 			return fmt.Errorf("not initialized — run 'obscuro init' first")
@@ -93,6 +101,18 @@ var authStatusCmd = &cobra.Command{
 		} else {
 			fmt.Fprintln(Stdout, "Keychain: no password stored")
 		}
+
+		fingerprint := cfg.Salt
+		if len(fingerprint) > 8 {
+			fingerprint = fingerprint[:8]
+		}
+		fmt.Fprintf(Stdout, "Salt fingerprint: %s...\n", fingerprint)
+
+		root, err := store.RepoRoot()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(Stdout, "Repo: %s\n", root)
 		return nil
 	},
 }

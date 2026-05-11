@@ -8,8 +8,9 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all secret keys",
+	Use:          "list",
+	Short:        "List all secret keys",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !store.IsInitialized() {
 			return fmt.Errorf("not initialized — run 'obscuro init' first")
