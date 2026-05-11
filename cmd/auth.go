@@ -69,7 +69,7 @@ var authClearCmd = &cobra.Command{
 		}
 
 		if !keychain.HasEntry(cfg.Salt) {
-			fmt.Fprintln(os.Stderr, "no keychain entry found (nothing to clear)")
+			fmt.Fprintln(cmd.ErrOrStderr(), "no keychain entry found (nothing to clear)")
 			return nil
 		}
 
@@ -77,7 +77,7 @@ var authClearCmd = &cobra.Command{
 			return fmt.Errorf("removing from keychain: %w", err)
 		}
 
-		fmt.Fprintln(os.Stderr, "Password removed from OS keychain.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Password removed from OS keychain.")
 		return nil
 	},
 }
