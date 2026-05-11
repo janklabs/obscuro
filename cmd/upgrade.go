@@ -22,11 +22,15 @@ import (
 const (
 	repoOwner = "janklabs"
 	repoName  = "obscuro"
+)
 
+var (
 	apiReleasesURL = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases"
 	apiLatestURL   = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases/latest"
 	downloadBase   = "https://github.com/" + repoOwner + "/" + repoName + "/releases/download"
 )
+
+var upgradeSkipChecksum bool
 
 var upgradeCmd = &cobra.Command{
 	Use:          "upgrade",
@@ -43,7 +47,19 @@ var upgradeCmd = &cobra.Command{
 }
 
 func runUpgrade() error {
-	current := version.Version
+	return runUpgradeFromURLs(version.Version, apiLatestURL, downloadBase, apiReleasesURL)
+}
+
+func runUpgradeFromURLs(currentVersion, latestTagAPIURL, downloadBaseURL, releasesAPIURL string) error {
+	// Temporarily redirect package-level URLs so fetchLatestTag/fetchChangelog
+	// (whose signatures are intentionally preserved) use the injected endpoints.
+	prevLatest, prevDownload, prevReleases := apiLatestURL, downloadBase, apiReleasesURL
+	apiLatestURL, downloadBase, apiReleasesURL = latestTagAPIURL, downloadBaseURL, releasesAPIURL
+	defer func() {
+		apiLatestURL, downloadBase, apiReleasesURL = prevLatest, prevDownload, prevReleases
+	}()
+
+	current := currentVersion
 	fmt.Fprintf(os.Stderr, "Current version: %s\n", current)
 
 	fmt.Fprintln(os.Stderr, "Fetching latest version...")
@@ -81,17 +97,21 @@ func runUpgrade() error {
 	defer os.RemoveAll(tmpDir)
 
 	assetPath := filepath.Join(tmpDir, assetName)
-	assetURL := fmt.Sprintf("%s/%s/%s", downloadBase, latest, assetName)
+	assetURL := fmt.Sprintf("%s/%s/%s", downloadBaseURL, latest, assetName)
 
 	fmt.Fprintf(os.Stderr, "Downloading %s...\n", assetName)
 	if err := downloadFile(assetURL, assetPath); err != nil {
 		return fmt.Errorf("downloading binary: %w", err)
 	}
 
-	sumsURL := fmt.Sprintf("%s/%s/checksums.txt", downloadBase, latest)
+	sumsURL := fmt.Sprintf("%s/%s/checksums.txt", downloadBaseURL, latest)
 	sumsPath := filepath.Join(tmpDir, "checksums.txt")
 	if err := downloadFile(sumsURL, sumsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not fetch checksums.txt: %v (skipping verification)\n", err)
+		if upgradeSkipChecksum || os.Getenv("OBSCURO_INSECURE_SKIP_CHECKSUM") == "1" {
+			fmt.Fprintln(os.Stderr, "warning: skipping checksum verification (OBSCURO_INSECURE_SKIP_CHECKSUM=1 / --insecure-skip-checksum)")
+		} else {
+			return fmt.Errorf("downloading checksums: %w (set --insecure-skip-checksum or OBSCURO_INSECURE_SKIP_CHECKSUM=1 to bypass; this is unsafe)", err)
+		}
 	} else {
 		if err := verifyChecksum(assetPath, sumsPath, assetName); err != nil {
 			return fmt.Errorf("verifying checksum: %w", err)
@@ -121,6 +141,7 @@ func runUpgrade() error {
 }
 
 func init() {
+	upgradeCmd.Flags().BoolVar(&upgradeSkipChecksum, "insecure-skip-checksum", false, "skip SHA-256 verification of the downloaded binary (UNSAFE)")
 	rootCmd.AddCommand(upgradeCmd)
 }
 

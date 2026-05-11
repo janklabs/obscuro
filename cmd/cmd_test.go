@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,7 @@ func setup(t *testing.T) {
 	password = ""
 	secretValue = ""
 	injectStrict = false
+	upgradeSkipChecksum = false
 }
 
 func execCmd(t *testing.T, args ...string) (string, string, error) {
@@ -445,5 +448,68 @@ func TestEditTempDirIsPrivate(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "600") {
 		t.Fatalf("expected file perms 600, got: %q", lines[1])
+	}
+}
+
+func newUpgradeTestServer(t *testing.T, withChecksums bool) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v99.99.99"}`))
+	})
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/download/v99.99.99/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/checksums.txt") {
+			if !withChecksums {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte("deadbeef  someasset\n"))
+			return
+		}
+		_, _ = w.Write([]byte("fake-binary-bytes"))
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestUpgradeFailsWhenChecksumUnavailable(t *testing.T) {
+	setup(t)
+	srv := newUpgradeTestServer(t, false)
+	defer srv.Close()
+
+	err := runUpgradeFromURLs(
+		"v0.0.1",
+		srv.URL+"/releases/latest",
+		srv.URL+"/download",
+		srv.URL+"/releases",
+	)
+	if err == nil {
+		t.Fatal("expected error when checksums.txt is unavailable")
+	}
+	if !strings.Contains(err.Error(), "set --insecure-skip-checksum") {
+		t.Fatalf("expected error to mention --insecure-skip-checksum, got: %v", err)
+	}
+}
+
+func TestUpgradeSkipChecksumOptOut(t *testing.T) {
+	setup(t)
+	srv := newUpgradeTestServer(t, false)
+	defer srv.Close()
+
+	upgradeSkipChecksum = true
+	defer func() { upgradeSkipChecksum = false }()
+
+	err := runUpgradeFromURLs(
+		"v0.0.1",
+		srv.URL+"/releases/latest",
+		srv.URL+"/download",
+		srv.URL+"/releases",
+	)
+	if err != nil && strings.Contains(err.Error(), "downloading checksums") {
+		t.Fatalf("opt-out should bypass the checksum download error, got: %v", err)
 	}
 }
