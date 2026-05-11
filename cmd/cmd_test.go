@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -389,5 +391,59 @@ func TestAuthStatusShowsSaltAndPath(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Repo:") {
 		t.Fatalf("expected stdout to contain 'Repo:', got: %q", stdout)
+	}
+}
+
+func TestEditTempDirIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	if _, err := os.Open("/dev/tty"); err != nil {
+		t.Skip("no /dev/tty available in this environment")
+	}
+
+	setup(t)
+	initVault(t)
+
+	if _, _, err := execCmd(t, "set", "MYKEY", "--password", testPassword, "--value", "oldvalue"); err != nil {
+		t.Fatalf("set failed: %v", err)
+	}
+
+	scriptDir := t.TempDir()
+	statOut := filepath.Join(scriptDir, "stat.out")
+
+	var statCmd string
+	switch runtime.GOOS {
+	case "darwin":
+		statCmd = `stat -f '%Lp' "$(dirname "$1")" > ` + statOut + `; stat -f '%Lp' "$1" >> ` + statOut
+	default:
+		statCmd = `stat -c '%a' "$(dirname "$1")" > ` + statOut + `; stat -c '%a' "$1" >> ` + statOut
+	}
+
+	scriptPath := filepath.Join(scriptDir, "fake-editor.sh")
+	scriptBody := "#!/bin/sh\n" + statCmd + "\necho newvalue > \"$1\"\n"
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("writing fake editor: %v", err)
+	}
+
+	t.Setenv("EDITOR", scriptPath)
+
+	if _, _, err := execCmd(t, "edit", "MYKEY", "--password", testPassword); err != nil {
+		t.Fatalf("edit failed: %v", err)
+	}
+
+	data, err := os.ReadFile(statOut)
+	if err != nil {
+		t.Fatalf("reading stat output: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected 2 stat lines, got: %q", string(data))
+	}
+	if !strings.Contains(lines[0], "700") {
+		t.Fatalf("expected dir perms 700, got: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "600") {
+		t.Fatalf("expected file perms 600, got: %q", lines[1])
 	}
 }
