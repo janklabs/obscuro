@@ -128,6 +128,15 @@ func withFakeKeychainBackend(t *testing.T, setErr, deleteErr error) {
 	t.Cleanup(func() { keychain.ResetBackend() })
 }
 
+// withFakeOSInfo swaps osDetectFn for the duration of one test.
+// Enables distro-specific assertions without touching /etc/os-release.
+func withFakeOSInfo(t *testing.T, info OSInfo) {
+	t.Helper()
+	orig := osDetectFn
+	osDetectFn = func() OSInfo { return info }
+	t.Cleanup(func() { osDetectFn = orig })
+}
+
 func TestInitCreatesDirectory(t *testing.T) {
 	setup(t)
 	_, stderr, err := execCmd(t, "init", "--password", testPassword)
@@ -591,6 +600,7 @@ func TestAuthStore_KeychainUnavailable_NoPrompt(t *testing.T) {
 	setup(t)
 	initVault(t)
 	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "ubuntu", DistroLike: "debian"})
 
 	// Track that promptPasswordFn is NOT called.
 	promptCalled := 0
@@ -609,9 +619,17 @@ func TestAuthStore_KeychainUnavailable_NoPrompt(t *testing.T) {
 	if !strings.Contains(stderr, "keychain unavailable") {
 		t.Errorf("stderr %q does not contain 'keychain unavailable'", stderr)
 	}
-	// Linux-specific substring (CI runs on Linux)
-	if runtime.GOOS == "linux" && !strings.Contains(stderr, "gnome-keyring") {
-		t.Errorf("stderr %q does not contain 'gnome-keyring' (linux)", stderr)
+	if !strings.Contains(stderr, "sudo apt-get install gnome-keyring") {
+		t.Errorf("stderr %q does not contain Ubuntu install command", stderr)
+	}
+	if !strings.Contains(stderr, "--password-file") {
+		t.Errorf("stderr %q does not contain --password-file alternative", stderr)
+	}
+	if !strings.Contains(stderr, "OBSCURO_PASSWORD") {
+		t.Errorf("stderr %q does not contain OBSCURO_PASSWORD alternative", stderr)
+	}
+	if !strings.Contains(stderr, "https://obscuro.dev/docs/troubleshooting") {
+		t.Errorf("stderr %q does not contain docs URL", stderr)
 	}
 	if !strings.Contains(stderr, "dbus down") {
 		t.Errorf("stderr %q does not contain underlying cause 'dbus down'", stderr)
@@ -654,6 +672,54 @@ func TestAuthStoreBeforeInit_KeychainUnavailable(t *testing.T) {
 	}
 }
 
+func TestAuthStore_KeychainUnavailable_ArchLinux(t *testing.T) {
+	setup(t)
+	initVault(t)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "arch"})
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable, got nil")
+	}
+	if !strings.Contains(stderr, "sudo pacman -S gnome-keyring") {
+		t.Errorf("stderr %q does not contain Arch install command", stderr)
+	}
+}
+
+func TestAuthStore_KeychainUnavailable_Alpine(t *testing.T) {
+	setup(t)
+	initVault(t)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "alpine"})
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable, got nil")
+	}
+	if !strings.Contains(stderr, "sudo apk add gnome-keyring") {
+		t.Errorf("stderr %q does not contain Alpine install command", stderr)
+	}
+}
+
+func TestAuthStore_KeychainUnavailable_Windows(t *testing.T) {
+	setup(t)
+	initVault(t)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "windows", Distro: "windows", Extra: map[string]string{"shell": "pwsh"}})
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable, got nil")
+	}
+	if !strings.Contains(stderr, "Credential Manager") {
+		t.Errorf("stderr %q does not contain 'Credential Manager'", stderr)
+	}
+	if !strings.Contains(stderr, "pwsh") {
+		t.Errorf("stderr %q does not contain 'pwsh'", stderr)
+	}
+}
+
 func TestAuthStatusShowsSaltAndPath(t *testing.T) {
 	if os.Getenv("OBSCURO_TEST_KEYCHAIN") != "1" {
 		t.Skip("set OBSCURO_TEST_KEYCHAIN=1 to run keychain-dependent tests")
@@ -684,6 +750,7 @@ func TestAuthStatus_KeychainUnavailable_ReturnsNilWithHint(t *testing.T) {
 	setup(t)
 	initVault(t)
 	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "fedora"})
 
 	stdout, _, err := execCmd(t, "auth", "status")
 	if err != nil {
@@ -691,6 +758,15 @@ func TestAuthStatus_KeychainUnavailable_ReturnsNilWithHint(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Keychain: unavailable") {
 		t.Errorf("stdout %q does not contain 'Keychain: unavailable'", stdout)
+	}
+	if strings.Contains(stdout, "Keychain: unavailable — keychain unavailable") {
+		t.Errorf("stdout %q has doubled wording (regression)", stdout)
+	}
+	if !strings.Contains(stdout, "sudo dnf install gnome-keyring") {
+		t.Errorf("stdout %q does not contain Fedora install command", stdout)
+	}
+	if !strings.Contains(stdout, "https://obscuro.dev/docs/troubleshooting") {
+		t.Errorf("stdout %q does not contain docs URL", stdout)
 	}
 	if !strings.Contains(stdout, "Salt fingerprint:") {
 		t.Errorf("stdout %q missing 'Salt fingerprint:' line", stdout)
@@ -1426,6 +1502,7 @@ func TestInitOfferKeychain_UnavailableSkipsPrompt(t *testing.T) {
 	setup(t)
 	withFakePassword(t, testPassword, testPassword)
 	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeOSInfo(t, OSInfo{Platform: "darwin", Distro: "macos", Extra: map[string]string{"homebrew": "apple-silicon"}})
 
 	// Wrap the confirm function to count calls — must remain 0.
 	confirmCalled := 0
@@ -1444,7 +1521,13 @@ func TestInitOfferKeychain_UnavailableSkipsPrompt(t *testing.T) {
 		t.Fatal("init did not create .obscuro/config.json")
 	}
 	if !strings.Contains(stderr, "keychain unavailable") {
-		t.Errorf("stderr %q does not contain keychain unavailable hint", stderr)
+		t.Errorf("stderr %q does not contain 'keychain unavailable'", stderr)
+	}
+	if !strings.Contains(stderr, "unlock login keychain") {
+		t.Errorf("stderr %q does not contain macOS keychain instruction", stderr)
+	}
+	if !strings.Contains(stderr, "https://obscuro.dev/docs/troubleshooting") {
+		t.Errorf("stderr %q does not contain docs URL", stderr)
 	}
 	if confirmCalled != 0 {
 		t.Errorf("offerKeychainConfirmFn called %d times, want 0 (should be skipped)", confirmCalled)
