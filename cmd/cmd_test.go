@@ -96,6 +96,16 @@ func withFakeKeychainConfirm(t *testing.T, answer string, hasTTY bool) {
 	t.Cleanup(func() { offerKeychainConfirmFn = orig })
 }
 
+// withFakeKeychainBackend installs a stub keychain backend for the duration of one test.
+// Pass nil for setErr / deleteErr to simulate a healthy keychain; pass a non-nil error
+// to simulate an unavailable one. Get always reports no entry — tests that need a stored
+// keychain value must use useMockKeyring(t) instead.
+func withFakeKeychainBackend(t *testing.T, setErr, deleteErr error) {
+	t.Helper()
+	keychain.ExportSetBackend(setErr, deleteErr)
+	t.Cleanup(func() { keychain.ResetBackend() })
+}
+
 func TestInitCreatesDirectory(t *testing.T) {
 	setup(t)
 	_, stderr, err := execCmd(t, "init", "--password", testPassword)
