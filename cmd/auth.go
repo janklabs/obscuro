@@ -35,7 +35,7 @@ var authStoreCmd = &cobra.Command{
 		}
 
 		if err := keychain.Available(); err != nil {
-			return fmt.Errorf("%s: %w", keychainRemediation(), err)
+			return fmt.Errorf("%s: %w", keychainRemediation().String(), err)
 		}
 
 		// Get and verify password before storing
@@ -101,7 +101,7 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if err := keychain.Available(); err != nil {
-			fmt.Fprintf(Stdout, "Keychain: unavailable — %s\n", keychainRemediation())
+			fmt.Fprintf(Stdout, "Keychain: unavailable — %s\n", keychainRemediation().String())
 			fingerprint := cfg.Salt
 			if len(fingerprint) > 8 {
 				fingerprint = fingerprint[:8]
