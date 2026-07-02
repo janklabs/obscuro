@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,13 +53,34 @@ func execCmd(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	rootCmd.SetArgs(args)
 
-	var stdout, stderr bytes.Buffer
+	var stdout, cobraStderr, osStderrBuf bytes.Buffer
 	Stdout = &stdout
-	rootCmd.SetErr(&stderr)
+	rootCmd.SetErr(&cobraStderr)
+
+	// Also capture os.Stderr so tests can assert on messages written directly
+	// to it (e.g., "Password stored in OS keychain." in auth.go and keychain
+	// remediation hints in init.go). Tests are sequential (no t.Parallel), so
+	// swapping the global is safe here.
+	origOSStderr := os.Stderr
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("os.Pipe: %v", pipeErr)
+	}
+	os.Stderr = w
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&osStderrBuf, r)
+		close(done)
+	}()
 
 	err := rootCmd.Execute()
+
+	_ = w.Close()
+	<-done
+	os.Stderr = origOSStderr
 	Stdout = os.Stdout
-	return stdout.String(), stderr.String(), err
+
+	return stdout.String(), cobraStderr.String() + osStderrBuf.String(), err
 }
 
 func initVault(t *testing.T) {
@@ -565,6 +587,73 @@ func TestAuthClearIdempotent(t *testing.T) {
 	}
 }
 
+func TestAuthStore_KeychainUnavailable_NoPrompt(t *testing.T) {
+	setup(t)
+	initVault(t)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+
+	// Track that promptPasswordFn is NOT called.
+	promptCalled := 0
+	orig := promptPasswordFn
+	promptPasswordFn = func(prompt string) (string, error) {
+		promptCalled++
+		return "", nil
+	}
+	t.Cleanup(func() { promptPasswordFn = orig })
+
+	_, stderr, err := execCmd(t, "auth", "store")
+
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable, got nil")
+	}
+	if !strings.Contains(stderr, "keychain unavailable") {
+		t.Errorf("stderr %q does not contain 'keychain unavailable'", stderr)
+	}
+	// Linux-specific substring (CI runs on Linux)
+	if runtime.GOOS == "linux" && !strings.Contains(stderr, "gnome-keyring") {
+		t.Errorf("stderr %q does not contain 'gnome-keyring' (linux)", stderr)
+	}
+	if !strings.Contains(stderr, "dbus down") {
+		t.Errorf("stderr %q does not contain underlying cause 'dbus down'", stderr)
+	}
+	if promptCalled != 0 {
+		t.Errorf("password prompt was called %d times, want 0 (no prompt before keychain check)", promptCalled)
+	}
+}
+
+func TestAuthStore_KeychainAvailable_HappyPath(t *testing.T) {
+	setup(t)
+	initVault(t)
+	useMockKeyring(t) // real keyring.MockInit() — Available() succeeds via mock provider
+
+	_, stderr, err := execCmd(t, "auth", "store", "--password", testPassword)
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stderr, "Password stored in OS keychain.") {
+		t.Errorf("stderr %q does not contain success message", stderr)
+	}
+	t.Cleanup(func() { _, _, _ = execCmd(t, "auth", "clear") })
+}
+
+func TestAuthStoreBeforeInit_KeychainUnavailable(t *testing.T) {
+	setup(t)
+	// No initVault — store is not initialized
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+
+	_, _, err := execCmd(t, "auth", "store")
+	if err == nil {
+		t.Fatal("expected error when not initialized, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "not initialized") {
+		t.Errorf("error %q does not contain 'not initialized'", errMsg)
+	}
+	if strings.Contains(errMsg, "keychain unavailable") {
+		t.Errorf("error %q contains 'keychain unavailable' — IsInitialized check must win", errMsg)
+	}
+}
+
 func TestAuthStatusShowsSaltAndPath(t *testing.T) {
 	if os.Getenv("OBSCURO_TEST_KEYCHAIN") != "1" {
 		t.Skip("set OBSCURO_TEST_KEYCHAIN=1 to run keychain-dependent tests")
@@ -588,6 +677,26 @@ func TestAuthStatusShowsSaltAndPath(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Repo:") {
 		t.Fatalf("expected stdout to contain 'Repo:', got: %q", stdout)
+	}
+}
+
+func TestAuthStatus_KeychainUnavailable_ReturnsNilWithHint(t *testing.T) {
+	setup(t)
+	initVault(t)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+
+	stdout, _, err := execCmd(t, "auth", "status")
+	if err != nil {
+		t.Fatalf("auth status must return nil (status negatives are not errors): %v", err)
+	}
+	if !strings.Contains(stdout, "Keychain: unavailable") {
+		t.Errorf("stdout %q does not contain 'Keychain: unavailable'", stdout)
+	}
+	if !strings.Contains(stdout, "Salt fingerprint:") {
+		t.Errorf("stdout %q missing 'Salt fingerprint:' line", stdout)
+	}
+	if !strings.Contains(stdout, "Repo:") {
+		t.Errorf("stdout %q missing 'Repo:' line", stdout)
 	}
 }
 
@@ -1310,6 +1419,35 @@ func TestInitOfferKeychainNoTTY(t *testing.T) {
 	}
 	if _, err := keychain.Get(cfg.Salt); err == nil {
 		t.Fatal("expected keychain.Get error (no TTY = silent skip), got nil")
+	}
+}
+
+func TestInitOfferKeychain_UnavailableSkipsPrompt(t *testing.T) {
+	setup(t)
+	withFakePassword(t, testPassword, testPassword)
+	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+
+	// Wrap the confirm function to count calls — must remain 0.
+	confirmCalled := 0
+	orig := offerKeychainConfirmFn
+	offerKeychainConfirmFn = func(prompt string) (string, bool) {
+		confirmCalled++
+		return "y", true
+	}
+	t.Cleanup(func() { offerKeychainConfirmFn = orig })
+
+	_, stderr, err := execCmd(t, "init")
+	if err != nil {
+		t.Fatalf("init must succeed even when keychain unavailable: %v\nstderr: %s", err, stderr)
+	}
+	if _, statErr := os.Stat(".obscuro/config.json"); statErr != nil {
+		t.Fatal("init did not create .obscuro/config.json")
+	}
+	if !strings.Contains(stderr, "keychain unavailable") {
+		t.Errorf("stderr %q does not contain keychain unavailable hint", stderr)
+	}
+	if confirmCalled != 0 {
+		t.Errorf("offerKeychainConfirmFn called %d times, want 0 (should be skipped)", confirmCalled)
 	}
 }
 
