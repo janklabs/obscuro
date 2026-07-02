@@ -28,13 +28,14 @@ Credential Manager is available by default on Windows 10 and later.
 <Callout type="warn">
   **Keychain unavailable?** If your host has no keychain (headless Linux, minimal container, CI runner), `obscuro auth store` will refuse with a remediation error before prompting for your password. Use one of these alternatives instead:
 
-  - `obscuro <cmd> --password-file /path/to/pw` — read the master password from a file (mode `600` recommended)
-  - `obscuro <cmd> --password-file -` — read from stdin (useful in pipes)
-  - `OBSCURO_PASSWORD=... obscuro <cmd>` — pass via environment variable
+- `obscuro <cmd> --password-file /path/to/pw` — read the master password from a file (mode `600` recommended)
+- `obscuro <cmd> --password-file -` — read from stdin (useful in pipes)
+- `OBSCURO_PASSWORD=... obscuro <cmd>` — pass via environment variable
 
-  See [configuration](/docs/configuration) for the full password-resolution order.
+See [configuration](/docs/configuration) for the full password-resolution order.
 
-  For a full walkthrough per distro, plus dbus verification and common failure modes, see [Troubleshooting](/docs/troubleshooting).
+For a full walkthrough per distro, plus dbus verification and common failure modes, see [Troubleshooting](/docs/troubleshooting).
+
 </Callout>
 
 ## Subcommands
