@@ -95,7 +95,7 @@ func confirmKeychainStore(prompt string) (string, bool) {
 // Silently skips if no TTY is available (non-interactive / CI).
 func offerKeychainStore(pw, salt string) {
 	if err := keychain.Available(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", keychainRemediation().String())
+		fmt.Fprintln(os.Stderr, keychainRemediation().String())
 		return
 	}
 
