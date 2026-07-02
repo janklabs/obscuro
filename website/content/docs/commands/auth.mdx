@@ -3,6 +3,38 @@ title: obscuro auth
 description: Manage OS keychain password storage
 ---
 
+## Prerequisites
+
+`obscuro auth` uses your OS keychain via the [Secret Service API](https://specifications.freedesktop.org/secret-service-spec/latest/) on Linux, Keychain on macOS, and Credential Manager on Windows.
+
+### Linux
+
+A running Secret Service provider is required. Install one of:
+
+- GNOME Keyring (`sudo apt-get install gnome-keyring` on Debian/Ubuntu; `sudo dnf install gnome-keyring` on Fedora)
+- KeePassXC with secret-service integration enabled (`Tools → Settings → Secret Service Integration → Enable`)
+- KWallet with the secret-service module
+
+Headless servers, minimal containers, and CI runners typically have no Secret Service provider — see "Keychain unavailable?" below.
+
+### macOS
+
+Keychain is available by default. The login keychain must be unlocked (it usually is after login).
+
+### Windows
+
+Credential Manager is available by default on Windows 10 and later.
+
+<Callout type="warn">
+  **Keychain unavailable?** If your host has no keychain (headless Linux, minimal container, CI runner), `obscuro auth store` will refuse with a remediation error before prompting for your password. Use one of these alternatives instead:
+
+  - `obscuro <cmd> --password-file /path/to/pw` — read the master password from a file (mode `600` recommended)
+  - `obscuro <cmd> --password-file -` — read from stdin (useful in pipes)
+  - `OBSCURO_PASSWORD=... obscuro <cmd>` — pass via environment variable
+
+  See [configuration](/docs/configuration) for the full password-resolution order.
+</Callout>
+
 ## Subcommands
 
 ### auth store
