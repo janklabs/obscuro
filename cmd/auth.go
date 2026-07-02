@@ -101,7 +101,15 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if err := keychain.Available(); err != nil {
-			fmt.Fprintf(Stdout, "Keychain: unavailable — %s\n", keychainRemediation().String())
+			rem := keychainRemediation()
+			fmt.Fprintln(Stdout, "Keychain: unavailable")
+			for i, step := range rem.Steps {
+				fmt.Fprintf(Stdout, "\n  %d. %s", i+1, step)
+			}
+			fmt.Fprintln(Stdout)
+			if rem.DocsURL != "" {
+				fmt.Fprintf(Stdout, "\nsee %s\n", rem.DocsURL)
+			}
 			fingerprint := cfg.Salt
 			if len(fingerprint) > 8 {
 				fingerprint = fingerprint[:8]
