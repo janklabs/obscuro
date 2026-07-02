@@ -2,6 +2,7 @@ package keychain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	keyring "github.com/zalando/go-keyring"
@@ -229,11 +230,13 @@ func TestHasEntryFalse(t *testing.T) {
 
 // stubBackend is a test stub that allows injection of errors.
 type stubBackend struct {
-	getErr error
+	setErr    error
+	getErr    error
+	deleteErr error
 }
 
 func (s stubBackend) Set(_, _, _ string) error {
-	return nil
+	return s.setErr
 }
 
 func (s stubBackend) Get(_, _ string) (string, error) {
@@ -241,7 +244,7 @@ func (s stubBackend) Get(_, _ string) (string, error) {
 }
 
 func (s stubBackend) Delete(_, _ string) error {
-	return nil
+	return s.deleteErr
 }
 
 // TestBackendSeam verifies that the backend can be swapped for testing.
@@ -297,4 +300,84 @@ func TestResetBackend(t *testing.T) {
 
 	// Restore original for cleanup
 	defaultBackend = originalBackend
+}
+
+// TestAvailableHealthy verifies that Available() returns nil when Set and Delete succeed.
+func TestAvailableHealthy(t *testing.T) {
+	originalBackend := defaultBackend
+	defer func() { defaultBackend = originalBackend }()
+
+	var setCalled bool
+	var setService, setUser, setPassword string
+	defaultBackend = capturingStub{
+		onSet: func(svc, usr, pw string) error {
+			setCalled = true
+			setService, setUser, setPassword = svc, usr, pw
+			return nil
+		},
+	}
+
+	if err := Available(); err != nil {
+		t.Fatalf("Available() = %v, want nil", err)
+	}
+	if !setCalled {
+		t.Error("Available() did not call Set")
+	}
+	if setService != serviceName {
+		t.Errorf("Set called with service=%q, want %q", setService, serviceName)
+	}
+	if setUser != probeUser {
+		t.Errorf("Set called with user=%q, want %q", setUser, probeUser)
+	}
+	if setPassword != "" {
+		t.Errorf("Set called with password=%q, want empty string", setPassword)
+	}
+}
+
+// capturingStub is a test-local backend that captures Set arguments.
+type capturingStub struct {
+	onSet func(svc, usr, pw string) error
+}
+
+func (c capturingStub) Set(svc, usr, pw string) error {
+	if c.onSet != nil {
+		return c.onSet(svc, usr, pw)
+	}
+	return nil
+}
+func (c capturingStub) Get(_, _ string) (string, error) { return "", keyring.ErrNotFound }
+func (c capturingStub) Delete(_, _ string) error        { return nil }
+
+// TestAvailableSetFails verifies that Available() returns ErrKeychainUnavailable
+// when Set fails, and that the underlying error is wrapped.
+func TestAvailableSetFails(t *testing.T) {
+	originalBackend := defaultBackend
+	defer func() { defaultBackend = originalBackend }()
+
+	cause := errors.New("dbus down")
+	defaultBackend = stubBackend{setErr: cause}
+
+	err := Available()
+	if err == nil {
+		t.Fatal("Available() = nil, want non-nil error")
+	}
+	if !errors.Is(err, ErrKeychainUnavailable) {
+		t.Errorf("errors.Is(err, ErrKeychainUnavailable) = false; err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "dbus down") {
+		t.Errorf("error %q does not contain underlying cause %q", err.Error(), "dbus down")
+	}
+}
+
+// TestAvailableDeleteNotFoundAfterSetSuccess verifies that Available() returns nil
+// even when Delete returns ErrNotFound (the probe entry was cleaned up externally).
+func TestAvailableDeleteNotFoundAfterSetSuccess(t *testing.T) {
+	originalBackend := defaultBackend
+	defer func() { defaultBackend = originalBackend }()
+
+	defaultBackend = stubBackend{deleteErr: keyring.ErrNotFound}
+
+	if err := Available(); err != nil {
+		t.Fatalf("Available() = %v, want nil (ErrNotFound from Delete should be treated as success)", err)
+	}
 }
