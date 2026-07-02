@@ -1,10 +1,19 @@
 package keychain
 
 import (
-	"github.com/zalando/go-keyring"
+	"errors"
+	"fmt"
+
+	keyring "github.com/zalando/go-keyring"
 )
 
 const serviceName = "obscuro"
+
+// ErrKeychainUnavailable is returned by Available when the OS keychain cannot
+// be reached on this host (dbus missing, Secret Service not running, etc.).
+var ErrKeychainUnavailable = errors.New("keychain unavailable")
+
+const probeUser = "__obscuro_probe__"
 
 // backend is the interface for keychain operations, allowing test injection.
 type backend interface {
@@ -36,6 +45,25 @@ func ResetBackend() {
 	defaultBackend = realBackend{}
 }
 
+// ExportSetBackend installs a stub backend that returns the given errors.
+// Intended ONLY for tests in other packages (cmd/); production callers must not use this.
+func ExportSetBackend(setErr, deleteErr error) {
+	defaultBackend = stubExport{setErr: setErr, deleteErr: deleteErr}
+}
+
+type stubExport struct {
+	setErr    error
+	deleteErr error
+}
+
+func (s stubExport) Set(_, _, _ string) error { return s.setErr }
+
+// Get returns ErrNotFound so HasEntry correctly reports "no entry"
+// during failure injection; tests that need a stored value should use
+// useMockKeyring(t) (real MockInit) instead of this stub.
+func (s stubExport) Get(_, _ string) (string, error) { return "", keyring.ErrNotFound }
+func (s stubExport) Delete(_, _ string) error        { return s.deleteErr }
+
 // Store saves the password in the OS keychain, keyed by the vault's salt.
 func Store(salt, password string) error {
 	return defaultBackend.Set(serviceName, salt, password)
@@ -55,4 +83,21 @@ func Delete(salt string) error {
 func HasEntry(salt string) bool {
 	_, err := defaultBackend.Get(serviceName, salt)
 	return err == nil
+}
+
+// Available reports whether the OS keychain is usable on this host.
+// It performs a trial Set + best-effort Delete of a well-known sentinel entry.
+// Returns nil on success. Returns ErrKeychainUnavailable (wrapping the underlying
+// error) if Set fails. Delete failures with keyring.ErrNotFound are treated
+// as success (the probe was cleaned up or never persisted).
+func Available() error {
+	if err := defaultBackend.Set(serviceName, probeUser, ""); err != nil {
+		return fmt.Errorf("%w: %v", ErrKeychainUnavailable, err)
+	}
+	if err := defaultBackend.Delete(serviceName, probeUser); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		// Best-effort cleanup. A non-ErrNotFound error here is logged only
+		// in tests via the stub; keychain is provably functional (Set succeeded).
+		_ = err
+	}
+	return nil
 }

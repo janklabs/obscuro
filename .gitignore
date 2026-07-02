@@ -1,6 +1,7 @@
 obscuro
 .obscuro/
 .sisyphus/
+.omo/
 
 # Website
 website/node_modules/
