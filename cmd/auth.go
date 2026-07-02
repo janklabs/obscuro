@@ -34,6 +34,10 @@ var authStoreCmd = &cobra.Command{
 			return fmt.Errorf("decoding salt: %w", err)
 		}
 
+		if err := keychain.Available(); err != nil {
+			return fmt.Errorf("%s: %w", keychainRemediation(), err)
+		}
+
 		// Get and verify password before storing
 		pw, err := getPassword("Enter master password: ", cfg.Salt)
 		if err != nil {
