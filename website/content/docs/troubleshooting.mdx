@@ -1,0 +1,177 @@
+---
+title: Troubleshooting
+description: Diagnose keychain and other runtime issues with obscuro
+---
+
+## Overview
+
+`obscuro` uses your OS keychain to store the master password so you don't need to type it on every command. Before storing or reading, it runs a quick preflight check by attempting a trial write to the keychain. If that fails, you'll see a `keychain unavailable` error with distro-specific instructions.
+
+This page walks through how to satisfy the keychain prerequisite on each platform, how to verify keychain connectivity, common failure modes, and alternative authentication methods for environments where a keychain isn't available.
+
+## Prerequisites
+
+### Linux
+
+Linux keychain support requires a running [Secret Service](https://specifications.freedesktop.org/secret-service-spec/latest/) provider. Install the one that matches your distro:
+
+| Distro                                     | Install command                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------- |
+| Debian / Ubuntu / Linux Mint               | `sudo apt-get install gnome-keyring`                                          |
+| Fedora / RHEL / CentOS / Rocky / AlmaLinux | `sudo dnf install gnome-keyring`                                              |
+| openSUSE                                   | `sudo zypper install gnome-keyring`                                           |
+| Arch / Manjaro / EndeavourOS               | `sudo pacman -S gnome-keyring`                                                |
+| Alpine                                     | `sudo apk add gnome-keyring`                                                  |
+| NixOS                                      | Add `services.gnome.gnome-keyring.enable = true;` to your `configuration.nix` |
+
+After installing, log out and back in (or start the daemon manually) to activate the keyring. Alternatively, [KeePassXC](https://keepassxc.org/) with **Tools → Settings → Secret Service Integration → Enable** works on any distro.
+
+<Callout type="info">
+  On many desktop environments the login keychain starts automatically when you
+  log in. If you're on a headless server or container, see [Common failure
+  modes](#common-failure-modes) below.
+</Callout>
+
+### macOS
+
+Keychain is built into macOS. The login keychain must be unlocked — it usually unlocks automatically at login.
+
+If you see a keychain error on macOS:
+
+1. Open **Keychain Access** (`/Applications/Utilities/Keychain Access.app`)
+2. Select **login** in the left panel
+3. Choose **File → Unlock Keychain "login"** and enter your login password
+
+```sh
+# Verify keychain access from the terminal
+security list-keychains
+```
+
+### Windows
+
+Credential Manager is built into Windows 10 and later. No installation is needed.
+
+To verify it's accessible:
+
+```powershell
+Get-Command cmdkey
+```
+
+If `cmdkey` is not found, check that Credential Manager is enabled in **Control Panel → Credential Manager**.
+
+## Verification
+
+Use these commands to confirm keychain connectivity before running `obscuro auth store`.
+
+### Linux
+
+```sh
+dbus-send --session --dest=org.freedesktop.secrets \
+  --type=method_call --print-reply /org/freedesktop/secrets \
+  org.freedesktop.DBus.Properties.Get \
+  string:org.freedesktop.Secret.Service string:Collections
+```
+
+A successful response lists your keychain collections. An error like `The name org.freedesktop.secrets was not provided by any .service files` means no Secret Service provider is running.
+
+### macOS
+
+```sh
+security list-keychains
+```
+
+The login keychain should appear. If it's locked, see the macOS section above.
+
+### Windows
+
+```powershell
+Get-Command cmdkey
+```
+
+## Common failure modes
+
+### Headless server
+
+A headless server has no display manager to start the keychain daemon. Use one of the [Alternatives](#alternatives) instead, or run `gnome-keyring-daemon --start --components=secrets` as a background process (requires a D-Bus session).
+
+### Docker / Podman containers
+
+Containers typically have no D-Bus session bus. Use the `--password-file` or `OBSCURO_PASSWORD` alternative.
+
+### WSL (Windows Subsystem for Linux)
+
+WSL 2 runs a minimal Linux inside a Hyper-V VM without a native Secret Service. Options:
+
+- Use `--password-file` or `OBSCURO_PASSWORD`
+- Install `gnome-keyring` and start it manually with `eval $(gnome-keyring-daemon --start)`
+
+### SSH forwarding without keyring forwarding
+
+When you SSH into a remote machine, your local keychain is not forwarded. The remote machine needs its own Secret Service provider.
+
+### SELinux / AppArmor blocking dbus
+
+Hardened policies may block D-Bus calls to the Secret Service. Check audit logs (`ausearch -m avc` or `journalctl -xe`) and add the appropriate policy exception, or use an alternative.
+
+### Rootless containers
+
+Running obscuro inside a rootless container (e.g., Podman in rootless mode) with no host D-Bus socket forwarded will fail. Use `--password-file` or `OBSCURO_PASSWORD`.
+
+### macOS: locked login keychain
+
+If the login keychain is locked (common after a long idle or after a password change), unlock it via Keychain Access or:
+
+```sh
+security unlock-keychain ~/Library/Keychains/login.keychain-db
+```
+
+### Windows: Group Policy blocking Credential Manager
+
+On domain-joined machines, Group Policy may disable Credential Manager. Contact your IT administrator or use `--password-file` / `OBSCURO_PASSWORD`.
+
+## Alternatives
+
+If a keychain isn't available, use one of these alternatives for every obscuro command that requires the master password:
+
+**`--password-file /path/to/pw`** — read the password from a file (recommended mode: `600`):
+
+```sh
+echo -n 'your-password' > ~/.obscuro-pw
+chmod 600 ~/.obscuro-pw
+obscuro get MY_SECRET --password-file ~/.obscuro-pw
+```
+
+**`--password-file -`** — read from stdin (useful in pipelines):
+
+```sh
+echo -n 'your-password' | obscuro inject --password-file -
+```
+
+**`OBSCURO_PASSWORD=...`** — pass via environment variable:
+
+```sh
+export OBSCURO_PASSWORD='your-password'
+obscuro inject < helm-values.yaml
+```
+
+<Callout type="warn">
+  Never commit your master password, password files, or decrypted secrets to
+  version control. Environment variables are visible in process lists and CI
+  logs — prefer `--password-file` with a secrets manager in production
+  pipelines.
+</Callout>
+
+**`--password 'pw'`** — inline on the command line (last resort; visible in process lists and shell history):
+
+```sh
+obscuro get MY_SECRET --password 'your-password'
+```
+
+See [configuration](/docs/configuration) for the full password-resolution order.
+
+## Related commands
+
+- [`obscuro auth store`](/docs/commands/auth) — store the master password in the OS keychain
+- [`obscuro auth status`](/docs/commands/auth) — check whether a password is currently stored
+- [`obscuro auth clear`](/docs/commands/auth) — remove the stored password
+- [`obscuro init`](/docs/commands/init) — initialise a new vault
