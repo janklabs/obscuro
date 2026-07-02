@@ -35,7 +35,7 @@ var authStoreCmd = &cobra.Command{
 		}
 
 		if err := keychain.Available(); err != nil {
-			return fmt.Errorf("%s: %w", keychainRemediation().String(), err)
+			return fmt.Errorf("%s\n\n%w", keychainRemediation().String(), err)
 		}
 
 		// Get and verify password before storing
