@@ -94,6 +94,11 @@ func confirmKeychainStore(prompt string) (string, bool) {
 // offerKeychainStore prompts the user to store the password in the OS keychain.
 // Silently skips if no TTY is available (non-interactive / CI).
 func offerKeychainStore(pw, salt string) {
+	if err := keychain.Available(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", keychainRemediation())
+		return
+	}
+
 	answer, hasTTY := offerKeychainConfirmFn("Store password in OS keychain? [Y/n] ")
 	if !hasTTY {
 		return
@@ -101,7 +106,7 @@ func offerKeychainStore(pw, salt string) {
 
 	if answer == "" || answer == "y" || answer == "yes" {
 		if err := keychain.Store(salt, pw); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not store in keychain: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s: %v\n", keychainRemediation(), err)
 			return
 		}
 		if tty, err := openTTY(); err == nil {
