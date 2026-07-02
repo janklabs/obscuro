@@ -100,6 +100,21 @@ var authStatusCmd = &cobra.Command{
 			return err
 		}
 
+		if err := keychain.Available(); err != nil {
+			fmt.Fprintf(Stdout, "Keychain: unavailable — %s\n", keychainRemediation())
+			fingerprint := cfg.Salt
+			if len(fingerprint) > 8 {
+				fingerprint = fingerprint[:8]
+			}
+			fmt.Fprintf(Stdout, "Salt fingerprint: %s...\n", fingerprint)
+			root, rerr := store.RepoRoot()
+			if rerr != nil {
+				return rerr
+			}
+			fmt.Fprintf(Stdout, "Repo: %s\n", root)
+			return nil
+		}
+
 		if keychain.HasEntry(cfg.Salt) {
 			fmt.Fprintln(Stdout, "Keychain: password stored")
 		} else {
