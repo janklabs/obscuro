@@ -21,6 +21,8 @@ Sets up the `.obscuro/` directory at your git repo root.
 6. Creates an empty `.obscuro/secrets.json`
 7. Asks if you'd like to save the password in your OS keychain
 
+The offer now launches the full backend selector, letting you choose between the OS keychain and a managed password file at `~/.config/obscuro/vaults/<hash>.pw`. You can also skip and run `obscuro auth store` later to set or change your backend.
+
 ## Files Created
 
 - `.obscuro/config.json` — salt + verification token (mode 0600)
@@ -34,6 +36,8 @@ $ obscuro init
 Enter master password:
 Confirm master password:
 Vault initialized at .obscuro/
-Store password in keychain? [y/N]: y
-Password stored in keychain.
+Store password for future use? [Y/n]: Y
+[Use ↑/↓ to navigate, enter to select]
+  [✓] OS keychain — ready
+  [✓] managed file — ready — writes to ~/.config/obscuro/vaults/a1b2c3d4.pw
 ```

@@ -18,9 +18,23 @@ Obscuro checks these sources in order and uses the first one it finds:
 
 1. `--password` flag
 2. `--password-file` flag
-3. OS keychain (keyed by your vault's salt)
+3. Configured backend (from `.obscuro/config.json` `password_backend` field):
+   - `"keychain"` → OS keychain
+   - `"file"` → `~/.config/obscuro/vaults/<hash>.pw`
+   - `""` or `"none"` → skipped (pre-migration vaults)
 4. `OBSCURO_PASSWORD` environment variable
 5. Interactive TTY prompt
+
+## Config File Fields
+
+The `.obscuro/config.json` file holds vault metadata (never secret values themselves). It is safe to commit.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `salt` | string | — | Base64-encoded Argon2 salt (set by `obscuro init`) |
+| `verification_token` | string | — | Encrypted token to verify password correctness |
+| `schema_version` | int | `0` | Config schema version (`0`=v1, `2`=v2+). Written by `obscuro auth store`. |
+| `password_backend` | string | `""` | Which backend `getPassword` reads from: `keychain`, `file`, `none`, or `""` (skipped) |
 
 ## Environment Variables
 
