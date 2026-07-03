@@ -3,12 +3,14 @@ package cmd
 import (
 	"bufio"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/janklabs/obscuro/internal/crypto"
 	"github.com/janklabs/obscuro/internal/keychain"
+	"github.com/janklabs/obscuro/internal/pwfile"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -65,10 +67,19 @@ var initCmd = &cobra.Command{
 
 		fmt.Fprintln(os.Stderr, "Initialized .obscuro.")
 
-		// Offer to store password in OS keychain (only for interactive sessions)
+		// Offer to store the password in a backend (only for interactive sessions).
+		// The cfg is constructed in-memory here rather than re-read from disk so the
+		// selector's post-choice SaveConfig writes the freshly-init'd config exactly
+		// once. Fields mirror what store.Init just wrote; SchemaVersion is set to 2
+		// so LoadConfig-based readers see the current schema even before SaveConfig.
 		if password == "" {
 			saltB64 := base64.StdEncoding.EncodeToString(salt)
-			offerKeychainStore(pw, saltB64)
+			cfg := &store.Config{
+				Salt:              saltB64,
+				VerificationToken: token,
+				SchemaVersion:     2,
+			}
+			offerBackendSelector(pw, saltB64, cfg)
 		}
 
 		return nil
@@ -91,29 +102,49 @@ func confirmKeychainStore(prompt string) (string, bool) {
 	return answer, true
 }
 
-// offerKeychainStore prompts the user to store the password in the OS keychain.
-// Silently skips if no TTY is available (non-interactive / CI).
-func offerKeychainStore(pw, salt string) {
-	if err := keychain.Available(); err != nil {
-		fmt.Fprintln(os.Stderr, keychainRemediation().String())
-		return
-	}
-
-	answer, hasTTY := offerKeychainConfirmFn("Store password in OS keychain? [Y/n] ")
+// offerBackendSelector asks the user whether to store the master password, then
+// delegates backend selection to runBackendSelectorFn (the TUI). On success it
+// writes cfg.PasswordBackend and persists cfg via store.SaveConfig. This is a
+// fire-and-forget helper: init exits 0 regardless of any error here — the user
+// can always run `obscuro auth store` later.
+func offerBackendSelector(pw, salt string, cfg *store.Config) {
+	answer, hasTTY := offerKeychainConfirmFn("Store password for future use? [Y/n] ")
 	if !hasTTY {
 		return
 	}
+	if answer != "" && answer != "y" && answer != "yes" {
+		return
+	}
 
-	if answer == "" || answer == "y" || answer == "yes" {
-		if err := keychain.Store(salt, pw); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", keychainRemediation().Error(), err)
+	statuses := detectBackends(*cfg)
+	choice, err := runBackendSelectorFn(statuses, false)
+	if err != nil {
+		if errors.Is(err, ErrNonInteractive) || errors.Is(err, ErrCancelled) {
+			fmt.Fprintln(os.Stderr, "Skipping backend setup; run 'obscuro auth store' later.")
 			return
 		}
-		if tty, err := openTTY(); err == nil {
-			fmt.Fprintln(tty, "Password stored in OS keychain.")
-			tty.Close()
+		fmt.Fprintf(os.Stderr, "backend selector: %v\n", err)
+		return
+	}
+
+	switch choice.Kind {
+	case BackendKeychain:
+		if err := keychain.Store(salt, pw); err != nil {
+			fmt.Fprintf(os.Stderr, "storing password in keychain: %v\n", err)
+			return
+		}
+	case BackendFile:
+		if err := pwfile.Write(salt, pw); err != nil {
+			fmt.Fprintf(os.Stderr, "writing password file: %v\n", err)
+			return
 		}
 	}
+
+	cfg.PasswordBackend = string(choice.Kind)
+	if err := store.SaveConfig(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "saving config: %v\n", err)
+	}
+	fmt.Fprintf(os.Stderr, "Password stored via %s.\n", choice.Kind)
 }
 
 func init() {
