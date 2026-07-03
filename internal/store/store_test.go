@@ -404,3 +404,103 @@ func TestInvalidB64Salt(t *testing.T) {
 		t.Fatal("expected DecodeSalt to error on invalid base64")
 	}
 }
+
+func TestLoadConfig_V1_Backward(t *testing.T) {
+	setup(t)
+	if err := Init([]byte("0123456789abcdef"), "fake-token"); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1JSON := `{"salt":"YWFhYWFhYWFhYWFhYWFhYQ==","verification_token":"dGVzdC10b2tlbg=="}`
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte(v1JSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig should succeed for v1 config, got: %v", err)
+	}
+	if cfg.SchemaVersion != 0 {
+		t.Fatalf("expected SchemaVersion=0 (missing field zero-fills), got %d", cfg.SchemaVersion)
+	}
+	if cfg.PasswordBackend != "" {
+		t.Fatalf("expected PasswordBackend=\"\" (missing field zero-fills), got %q", cfg.PasswordBackend)
+	}
+	if cfg.Salt != "YWFhYWFhYWFhYWFhYWFhYQ==" {
+		t.Fatalf("expected Salt preserved, got %q", cfg.Salt)
+	}
+	if cfg.VerificationToken != "dGVzdC10b2tlbg==" {
+		t.Fatalf("expected VerificationToken preserved, got %q", cfg.VerificationToken)
+	}
+}
+
+func TestLoadConfig_V2(t *testing.T) {
+	setup(t)
+	if err := Init([]byte("0123456789abcdef"), "fake-token"); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2JSON := `{"salt":"YWFhYWFhYWFhYWFhYWFhYQ==","verification_token":"dGVzdC10b2tlbg==","schema_version":2,"password_backend":"file"}`
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte(v2JSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig should succeed for v2 config, got: %v", err)
+	}
+	if cfg.SchemaVersion != 2 {
+		t.Fatalf("expected SchemaVersion=2, got %d", cfg.SchemaVersion)
+	}
+	if cfg.PasswordBackend != "file" {
+		t.Fatalf("expected PasswordBackend=\"file\", got %q", cfg.PasswordBackend)
+	}
+}
+
+func TestSaveConfig_AlwaysEmitsV2(t *testing.T) {
+	setup(t)
+	if err := Init([]byte("0123456789abcdef"), "fake-token"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SchemaVersion != 0 {
+		t.Fatalf("precondition: Init should leave SchemaVersion=0, got %d", cfg.SchemaVersion)
+	}
+
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ConfigFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawStr := string(raw)
+	if !strings.Contains(rawStr, `"schema_version"`) {
+		t.Fatalf("expected raw JSON to contain \"schema_version\" key, got: %s", rawStr)
+	}
+	if !strings.Contains(rawStr, `"schema_version": 2`) {
+		t.Fatalf("expected raw JSON to contain '\"schema_version\": 2', got: %s", rawStr)
+	}
+
+	reloaded, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.SchemaVersion != 2 {
+		t.Fatalf("expected reloaded SchemaVersion=2 after SaveConfig, got %d", reloaded.SchemaVersion)
+	}
+}
