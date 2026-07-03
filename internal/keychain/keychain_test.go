@@ -323,8 +323,8 @@ func TestAvailableHealthy(t *testing.T) {
 	if !setCalled {
 		t.Error("Available() did not call Set")
 	}
-	if setService != serviceName {
-		t.Errorf("Set called with service=%q, want %q", setService, serviceName)
+	if setService != ServiceName {
+		t.Errorf("Set called with service=%q, want %q", setService, ServiceName)
 	}
 	if setUser != probeUser {
 		t.Errorf("Set called with user=%q, want %q", setUser, probeUser)

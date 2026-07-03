@@ -7,7 +7,10 @@ import (
 	keyring "github.com/zalando/go-keyring"
 )
 
-const serviceName = "obscuro"
+// ServiceName is the OS keychain "service" identifier used by all
+// obscuro entries. Exported so cmd/backend_detect.go can probe with
+// the exact string without duplication.
+const ServiceName = "obscuro"
 
 // ErrKeychainUnavailable is returned by Available when the OS keychain cannot
 // be reached on this host (dbus missing, Secret Service not running, etc.).
@@ -66,22 +69,22 @@ func (s stubExport) Delete(_, _ string) error        { return s.deleteErr }
 
 // Store saves the password in the OS keychain, keyed by the vault's salt.
 func Store(salt, password string) error {
-	return defaultBackend.Set(serviceName, salt, password)
+	return defaultBackend.Set(ServiceName, salt, password)
 }
 
 // Get retrieves the password from the OS keychain for the given salt.
 func Get(salt string) (string, error) {
-	return defaultBackend.Get(serviceName, salt)
+	return defaultBackend.Get(ServiceName, salt)
 }
 
 // Delete removes the password from the OS keychain for the given salt.
 func Delete(salt string) error {
-	return defaultBackend.Delete(serviceName, salt)
+	return defaultBackend.Delete(ServiceName, salt)
 }
 
 // HasEntry returns true if a keychain entry exists for the given salt.
 func HasEntry(salt string) bool {
-	_, err := defaultBackend.Get(serviceName, salt)
+	_, err := defaultBackend.Get(ServiceName, salt)
 	return err == nil
 }
 
@@ -91,10 +94,10 @@ func HasEntry(salt string) bool {
 // error) if Set fails. Delete failures with keyring.ErrNotFound are treated
 // as success (the probe was cleaned up or never persisted).
 func Available() error {
-	if err := defaultBackend.Set(serviceName, probeUser, ""); err != nil {
+	if err := defaultBackend.Set(ServiceName, probeUser, ""); err != nil {
 		return fmt.Errorf("%w: %v", ErrKeychainUnavailable, err)
 	}
-	if err := defaultBackend.Delete(serviceName, probeUser); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := defaultBackend.Delete(ServiceName, probeUser); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		// Best-effort cleanup. A non-ErrNotFound error here is logged only
 		// in tests via the stub; keychain is provably functional (Set succeeded).
 		_ = err

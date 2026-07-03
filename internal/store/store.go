@@ -50,6 +50,13 @@ func ResetRoot() {
 type Config struct {
 	Salt              string `json:"salt"`               // base64-encoded
 	VerificationToken string `json:"verification_token"` // base64(nonce||ciphertext)
+	// SchemaVersion and PasswordBackend were added in schema v2.
+	// Missing fields (v1 configs) are read as zero values — SchemaVersion=0,
+	// PasswordBackend="" — and treated as equivalent to "none". Writers always
+	// emit v2. json.Unmarshal ignores unknown fields (old binaries reading new
+	// files) and zero-fills missing fields (new binaries reading old files).
+	SchemaVersion   int    `json:"schema_version,omitempty"`
+	PasswordBackend string `json:"password_backend,omitempty"`
 }
 
 // Dir returns the absolute path to the .obscuro directory at the repo root.
@@ -117,6 +124,19 @@ func Init(salt []byte, verificationToken string) error {
 		return fmt.Errorf("writing secrets: %w", err)
 	}
 	return nil
+}
+
+// SaveConfig writes the config atomically (temp+rename), always emitting schema v2.
+func SaveConfig(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("SaveConfig: nil config")
+	}
+	cfg.SchemaVersion = 2
+	p, err := configPath()
+	if err != nil {
+		return err
+	}
+	return writeJSON(p, cfg)
 }
 
 // LoadConfig reads and parses the config file.
@@ -198,5 +218,13 @@ func writeJSON(path string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
