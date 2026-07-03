@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/janklabs/obscuro/internal/keychain"
+	"github.com/janklabs/obscuro/internal/pwfile"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/janklabs/obscuro/internal/version"
 	"github.com/zalando/go-keyring"
@@ -47,6 +48,13 @@ func setup(t *testing.T) {
 	upgradeStderr = os.Stderr
 	replaceBinary = atomicReplace
 	keychain.ResetBackend()
+	// authStoreCmd's --backend flag binds to authBackend (package-global);
+	// authCmd's --verbose flag binds to authVerbose. Cobra does NOT reset
+	// StringVar/BoolVar targets between execCmd invocations, so a prior
+	// `auth store --backend=keychain` would leak into the next `auth store`
+	// (no flag) call. Reset both here so every test starts from zero.
+	authBackend = ""
+	authVerbose = false
 }
 
 func execCmd(t *testing.T, args ...string) (string, string, error) {
@@ -157,6 +165,38 @@ func withFakeKeychainProbe(t *testing.T, reason string) {
 				}
 			},
 			defaultFileProbe(salt)
+	}
+	t.Cleanup(func() { backendProbesFn = orig })
+}
+
+// withFakeBackendChoice replaces runBackendSelectorFn with a stub that
+// always returns the given choice (no error). Used by tests that need the
+// selector's outcome to be deterministic — the real TUI needs a TTY and
+// is not test-friendly. Restored via t.Cleanup.
+func withFakeBackendChoice(t *testing.T, kind BackendKind, verbose bool) {
+	t.Helper()
+	orig := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		return backendChoice{Kind: kind, Verbose: verbose}, nil
+	}
+	t.Cleanup(func() { runBackendSelectorFn = orig })
+}
+
+// withFakeBackendProbes replaces backendProbesFn with a stub returning
+// pre-canned statuses. statuses[0] is returned by the keychain probe,
+// statuses[1] by the file probe — matching detectBackends' fixed order.
+// Used by tests that need to force specific Available/Reason combinations
+// without touching the real keychain or filesystem.
+func withFakeBackendProbes(t *testing.T, statuses []BackendStatus) {
+	t.Helper()
+	if len(statuses) != 2 {
+		t.Fatalf("withFakeBackendProbes: expected 2 statuses (keychain, file), got %d", len(statuses))
+	}
+	orig := backendProbesFn
+	keychainStatus, fileStatus := statuses[0], statuses[1]
+	backendProbesFn = func(_ string) (backendProbe, backendProbe) {
+		return func() BackendStatus { return keychainStatus },
+			func() BackendStatus { return fileStatus }
 	}
 	t.Cleanup(func() { backendProbesFn = orig })
 }
@@ -3597,5 +3637,308 @@ func TestVerifyCosignSignatureSuccess(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "cosign signature verified") {
 		t.Fatalf("expected 'cosign signature verified' in stderr, got: %q", buf.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 13 — Backend selector, --backend flag, non-TTY, doctor, file-routing.
+// Covers auth store's new selector-first flow, the --backend escape hatch
+// (exit 3 when unavailable), non-TTY refusal (exit 2 with hint), doctor's
+// diagnostic-only exit 0 contract, getPassword's file-backend routing, and
+// the Metis F5 invariant: auth clear must NOT accept --backend.
+// ---------------------------------------------------------------------------
+
+func TestAuthStore_Selector_PicksKeychain(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+	withFakeBackendChoice(t, BackendKeychain, false)
+	withFakePassword(t, testPassword)
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.PasswordBackend != "keychain" {
+		t.Fatalf("expected cfg.PasswordBackend=%q, got %q", "keychain", cfg.PasswordBackend)
+	}
+	if !keychain.HasEntry(cfg.Salt) {
+		t.Fatal("expected keychain entry to exist after selector picked keychain")
+	}
+}
+
+func TestAuthStore_Selector_PicksFile(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+	withFakeBackendChoice(t, BackendFile, false)
+	withFakePassword(t, testPassword)
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.PasswordBackend != "file" {
+		t.Fatalf("expected cfg.PasswordBackend=%q, got %q", "file", cfg.PasswordBackend)
+	}
+	if !pwfile.Exists(cfg.Salt) {
+		t.Fatal("expected pwfile to exist after selector picked file")
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	pwPath, err := pwfile.Path(cfg.Salt)
+	if err != nil {
+		t.Fatalf("pwfile.Path: %v", err)
+	}
+	info, err := os.Stat(pwPath)
+	if err != nil {
+		t.Fatalf("stat pwfile: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("pwfile perms: expected 0600, got %o", mode)
+	}
+}
+
+func TestAuthStore_BackendFlag_Keychain(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+
+	// Sentinel: assert the selector seam is bypassed when --backend is set.
+	// If the flag branch in cmd/auth.go regresses and calls the selector,
+	// this stub will mark the test failed via t.Errorf.
+	origSelector := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		t.Errorf("runBackendSelectorFn must NOT be called when --backend flag is set")
+		return backendChoice{}, fmt.Errorf("selector should not be called")
+	}
+	t.Cleanup(func() { runBackendSelectorFn = origSelector })
+
+	withFakeBackendProbes(t, []BackendStatus{
+		{Kind: BackendKeychain, Name: "OS keychain", Available: true, Reason: "ready"},
+		{Kind: BackendFile, Name: "managed file", Available: true, Reason: "ready"},
+	})
+	withFakePassword(t, testPassword)
+
+	_, stderr, err := execCmd(t, "auth", "store", "--backend=keychain")
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.PasswordBackend != "keychain" {
+		t.Fatalf("expected cfg.PasswordBackend=%q, got %q", "keychain", cfg.PasswordBackend)
+	}
+	if !keychain.HasEntry(cfg.Salt) {
+		t.Fatal("expected keychain entry to exist after --backend=keychain")
+	}
+}
+
+func TestAuthStore_BackendFlag_File(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+
+	origSelector := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		t.Errorf("runBackendSelectorFn must NOT be called when --backend flag is set")
+		return backendChoice{}, fmt.Errorf("selector should not be called")
+	}
+	t.Cleanup(func() { runBackendSelectorFn = origSelector })
+
+	withFakeBackendProbes(t, []BackendStatus{
+		{Kind: BackendKeychain, Name: "OS keychain", Available: true, Reason: "ready"},
+		{Kind: BackendFile, Name: "managed file", Available: true, Reason: "ready"},
+	})
+	withFakePassword(t, testPassword)
+
+	_, stderr, err := execCmd(t, "auth", "store", "--backend=file")
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.PasswordBackend != "file" {
+		t.Fatalf("expected cfg.PasswordBackend=%q, got %q", "file", cfg.PasswordBackend)
+	}
+	if !pwfile.Exists(cfg.Salt) {
+		t.Fatal("expected pwfile to exist after --backend=file")
+	}
+}
+
+func TestAuthStore_BackendFlag_UnavailableFails(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+
+	withFakeBackendProbes(t, []BackendStatus{
+		{Kind: BackendKeychain, Name: "OS keychain", Available: false, Reason: "dbus unreachable"},
+		{Kind: BackendFile, Name: "managed file", Available: true, Reason: "ready"},
+	})
+
+	_, _, err := execCmd(t, "auth", "store", "--backend=keychain")
+	if err == nil {
+		t.Fatal("expected error when --backend=keychain but keychain unavailable")
+	}
+	var ee *exitErr
+	if !errors.As(err, &ee) {
+		t.Fatalf("expected *exitErr, got %T: %v", err, err)
+	}
+	if ee.code != 3 {
+		t.Fatalf("expected exit code 3, got %d (msg=%q)", ee.code, ee.msg)
+	}
+	if !strings.Contains(err.Error(), "is not available") && !strings.Contains(err.Error(), "dbus") {
+		t.Fatalf("expected error to contain 'is not available' or 'dbus', got: %v", err)
+	}
+}
+
+func TestAuthStore_NonInteractive_Refuses(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+
+	// Force os.Stdin to a non-TTY pipe so runBackendSelector's isatty
+	// guard fires deterministically. Without this, a developer running
+	// `go test` in an interactive shell would inherit a real TTY and the
+	// bubbletea TUI would try to start.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	_ = pw.Close()
+	origStdin := os.Stdin
+	os.Stdin = pr
+	t.Cleanup(func() { os.Stdin = origStdin })
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err == nil {
+		t.Fatal("expected error when auth store runs without a TTY and no --backend")
+	}
+	var ee *exitErr
+	if !errors.As(err, &ee) {
+		t.Fatalf("expected *exitErr, got %T: %v", err, err)
+	}
+	if ee.code != 2 {
+		t.Fatalf("expected exit code 2, got %d (msg=%q)", ee.code, ee.msg)
+	}
+	if !strings.Contains(stderr, "--backend=keychain") {
+		t.Fatalf("expected stderr to contain '--backend=keychain', got: %q", stderr)
+	}
+	if !strings.Contains(stderr, "--backend=file") {
+		t.Fatalf("expected stderr to contain '--backend=file', got: %q", stderr)
+	}
+}
+
+func TestAuthDoctor_ExitsZero_PrintsTable(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+
+	withFakeBackendProbes(t, []BackendStatus{
+		{Kind: BackendKeychain, Name: "OS keychain", Available: true, Reason: "ready"},
+		{Kind: BackendFile, Name: "managed file", Available: true, Reason: "ready"},
+	})
+
+	stdout, _, err := execCmd(t, "auth", "doctor")
+	if err != nil {
+		t.Fatalf("auth doctor should exit 0 (diagnostic-only), got: %v", err)
+	}
+	if !strings.Contains(stdout, "backend availability") {
+		t.Fatalf("expected 'backend availability' in stdout, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "keychain") {
+		t.Fatalf("expected 'keychain' in stdout, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "file") {
+		t.Fatalf("expected 'file' in stdout, got: %q", stdout)
+	}
+}
+
+func TestGetPassword_RoutesToFileBackend(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+	passwordFile = ""
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if err := pwfile.Write(cfg.Salt, testPassword); err != nil {
+		t.Fatalf("pwfile.Write: %v", err)
+	}
+	cfg.PasswordBackend = "file"
+	if err := store.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	// Guard: if the file-backend branch regresses and falls through to
+	// env/prompt, we must fail loudly rather than silently returning a
+	// prompt-scripted value that happens to match.
+	origPrompt := promptPasswordFn
+	promptPasswordFn = func(prompt string) (string, error) {
+		t.Errorf("promptPasswordFn must NOT be called when file backend has a password")
+		return "", fmt.Errorf("prompt should not be called")
+	}
+	t.Cleanup(func() { promptPasswordFn = origPrompt })
+
+	pw, err := getPassword("Enter master password: ", *cfg)
+	if err != nil {
+		t.Fatalf("getPassword: %v", err)
+	}
+	if pw != testPassword {
+		t.Fatalf("expected getPassword to return %q from file backend, got %q", testPassword, pw)
+	}
+}
+
+func TestAuthClear_RejectsBackendFlag(t *testing.T) {
+	setup(t)
+	useMockKeyring(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	initVault(t)
+	password = ""
+	withFakeBackendChoice(t, BackendKeychain, false)
+	withFakePassword(t, testPassword)
+
+	if _, _, err := execCmd(t, "auth", "store"); err != nil {
+		t.Fatalf("auth store setup failed: %v", err)
+	}
+
+	_, stderr, err := execCmd(t, "auth", "clear", "--backend=file")
+	if err == nil {
+		t.Fatal("expected error: auth clear must not accept --backend flag")
+	}
+	combined := err.Error() + "\n" + stderr
+	if !strings.Contains(combined, "unknown flag: --backend") {
+		t.Fatalf("expected 'unknown flag: --backend' in error/stderr, got err=%v\nstderr=%q", err, stderr)
 	}
 }
