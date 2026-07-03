@@ -137,6 +137,30 @@ func withFakeOSInfo(t *testing.T, info OSInfo) {
 	t.Cleanup(func() { osDetectFn = orig })
 }
 
+// withFakeKeychainProbe forces the detector's keychain probe to report
+// unavailable with remediation text derived from the current osDetectFn.
+// The file probe keeps its production behavior. Used by tests that assert
+// OS-specific install-command output from `auth doctor` — the raw
+// keyring.Set probe cannot be intercepted via the keychain package's
+// backend abstraction because the detector uses go-keyring directly.
+func withFakeKeychainProbe(t *testing.T, reason string) {
+	t.Helper()
+	orig := backendProbesFn
+	backendProbesFn = func(salt string) (backendProbe, backendProbe) {
+		return func() BackendStatus {
+				return BackendStatus{
+					Kind:      BackendKeychain,
+					Name:      "OS keychain",
+					Available: false,
+					Reason:    reason,
+					Verbose:   []string{keychainRemediation().String()},
+				}
+			},
+			defaultFileProbe(salt)
+	}
+	t.Cleanup(func() { backendProbesFn = orig })
+}
+
 func TestInitCreatesDirectory(t *testing.T) {
 	setup(t)
 	_, stderr, err := execCmd(t, "init", "--password", testPassword)
@@ -596,13 +620,12 @@ func TestAuthClearIdempotent(t *testing.T) {
 	}
 }
 
-func TestAuthStore_KeychainUnavailable_NoPrompt(t *testing.T) {
+func TestAuthDoctor_KeychainUnavailable_NoPrompt(t *testing.T) {
 	setup(t)
 	initVault(t)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "ubuntu", DistroLike: "debian"})
 
-	// Track that promptPasswordFn is NOT called.
 	promptCalled := 0
 	orig := promptPasswordFn
 	promptPasswordFn = func(prompt string) (string, error) {
@@ -611,44 +634,44 @@ func TestAuthStore_KeychainUnavailable_NoPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { promptPasswordFn = orig })
 
-	_, stderr, err := execCmd(t, "auth", "store")
+	stdout, _, err := execCmd(t, "auth", "doctor")
 
-	if err == nil {
-		t.Fatal("expected error when keychain unavailable, got nil")
+	if err != nil {
+		t.Fatalf("auth doctor should exit 0 (diagnostic-only): %v", err)
 	}
-	if !strings.Contains(stderr, "keychain unavailable") {
-		t.Errorf("stderr %q does not contain 'keychain unavailable'", stderr)
+	if !strings.Contains(stdout, "keychain unavailable") {
+		t.Errorf("stdout %q does not contain 'keychain unavailable'", stdout)
 	}
-	if !strings.Contains(stderr, "sudo apt-get install gnome-keyring") {
-		t.Errorf("stderr %q does not contain Ubuntu install command", stderr)
+	if !strings.Contains(stdout, "sudo apt-get install gnome-keyring") {
+		t.Errorf("stdout %q does not contain Ubuntu install command", stdout)
 	}
-	if !strings.Contains(stderr, "--password-file") {
-		t.Errorf("stderr %q does not contain --password-file alternative", stderr)
+	if !strings.Contains(stdout, "--password-file") {
+		t.Errorf("stdout %q does not contain --password-file alternative", stdout)
 	}
-	if !strings.Contains(stderr, "OBSCURO_PASSWORD") {
-		t.Errorf("stderr %q does not contain OBSCURO_PASSWORD alternative", stderr)
+	if !strings.Contains(stdout, "OBSCURO_PASSWORD") {
+		t.Errorf("stdout %q does not contain OBSCURO_PASSWORD alternative", stdout)
 	}
-	if !strings.Contains(stderr, "https://obscuro.dev/docs/troubleshooting") {
-		t.Errorf("stderr %q does not contain docs URL", stderr)
+	if !strings.Contains(stdout, "https://obscuro.dev/docs/troubleshooting") {
+		t.Errorf("stdout %q does not contain docs URL", stdout)
 	}
-	if !strings.Contains(stderr, "dbus down") {
-		t.Errorf("stderr %q does not contain underlying cause 'dbus down'", stderr)
+	if !strings.Contains(stdout, "dbus down") {
+		t.Errorf("stdout %q does not contain underlying cause 'dbus down'", stdout)
 	}
 	if promptCalled != 0 {
-		t.Errorf("password prompt was called %d times, want 0 (no prompt before keychain check)", promptCalled)
+		t.Errorf("password prompt was called %d times, want 0 (doctor never prompts)", promptCalled)
 	}
 }
 
 func TestAuthStore_KeychainAvailable_HappyPath(t *testing.T) {
 	setup(t)
 	initVault(t)
-	useMockKeyring(t) // real keyring.MockInit() — Available() succeeds via mock provider
+	useMockKeyring(t)
 
-	_, stderr, err := execCmd(t, "auth", "store", "--password", testPassword)
+	_, stderr, err := execCmd(t, "auth", "store", "--backend=keychain", "--password", testPassword)
 	if err != nil {
 		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stderr, "Password stored in OS keychain.") {
+	if !strings.Contains(stderr, "Password stored via keychain.") {
 		t.Errorf("stderr %q does not contain success message", stderr)
 	}
 	t.Cleanup(func() { _, _, _ = execCmd(t, "auth", "clear") })
@@ -672,51 +695,51 @@ func TestAuthStoreBeforeInit_KeychainUnavailable(t *testing.T) {
 	}
 }
 
-func TestAuthStore_KeychainUnavailable_ArchLinux(t *testing.T) {
+func TestAuthDoctor_KeychainUnavailable_ArchLinux(t *testing.T) {
 	setup(t)
 	initVault(t)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "arch"})
 
-	_, stderr, err := execCmd(t, "auth", "store")
-	if err == nil {
-		t.Fatal("expected error when keychain unavailable, got nil")
+	stdout, _, err := execCmd(t, "auth", "doctor")
+	if err != nil {
+		t.Fatalf("auth doctor should exit 0: %v", err)
 	}
-	if !strings.Contains(stderr, "sudo pacman -S gnome-keyring") {
-		t.Errorf("stderr %q does not contain Arch install command", stderr)
+	if !strings.Contains(stdout, "sudo pacman -S gnome-keyring") {
+		t.Errorf("stdout %q does not contain Arch install command", stdout)
 	}
 }
 
-func TestAuthStore_KeychainUnavailable_Alpine(t *testing.T) {
+func TestAuthDoctor_KeychainUnavailable_Alpine(t *testing.T) {
 	setup(t)
 	initVault(t)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "alpine"})
 
-	_, stderr, err := execCmd(t, "auth", "store")
-	if err == nil {
-		t.Fatal("expected error when keychain unavailable, got nil")
+	stdout, _, err := execCmd(t, "auth", "doctor")
+	if err != nil {
+		t.Fatalf("auth doctor should exit 0: %v", err)
 	}
-	if !strings.Contains(stderr, "sudo apk add gnome-keyring") {
-		t.Errorf("stderr %q does not contain Alpine install command", stderr)
+	if !strings.Contains(stdout, "sudo apk add gnome-keyring") {
+		t.Errorf("stdout %q does not contain Alpine install command", stdout)
 	}
 }
 
-func TestAuthStore_KeychainUnavailable_Windows(t *testing.T) {
+func TestAuthDoctor_KeychainUnavailable_Windows(t *testing.T) {
 	setup(t)
 	initVault(t)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "windows", Distro: "windows", Extra: map[string]string{"shell": "pwsh"}})
 
-	_, stderr, err := execCmd(t, "auth", "store")
-	if err == nil {
-		t.Fatal("expected error when keychain unavailable, got nil")
+	stdout, _, err := execCmd(t, "auth", "doctor")
+	if err != nil {
+		t.Fatalf("auth doctor should exit 0: %v", err)
 	}
-	if !strings.Contains(stderr, "Credential Manager") {
-		t.Errorf("stderr %q does not contain 'Credential Manager'", stderr)
+	if !strings.Contains(stdout, "Credential Manager") {
+		t.Errorf("stdout %q does not contain 'Credential Manager'", stdout)
 	}
-	if !strings.Contains(stderr, "pwsh") {
-		t.Errorf("stderr %q does not contain 'pwsh'", stderr)
+	if !strings.Contains(stdout, "pwsh") {
+		t.Errorf("stdout %q does not contain 'pwsh'", stdout)
 	}
 }
 
@@ -746,33 +769,24 @@ func TestAuthStatusShowsSaltAndPath(t *testing.T) {
 	}
 }
 
-func TestAuthStatus_KeychainUnavailable_ReturnsNilWithHint(t *testing.T) {
+func TestAuthDoctor_KeychainUnavailable_Fedora(t *testing.T) {
 	setup(t)
 	initVault(t)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "linux", Distro: "fedora"})
 
-	stdout, _, err := execCmd(t, "auth", "status")
+	stdout, _, err := execCmd(t, "auth", "doctor")
 	if err != nil {
-		t.Fatalf("auth status must return nil (status negatives are not errors): %v", err)
+		t.Fatalf("auth doctor should exit 0 (diagnostic-only): %v", err)
 	}
-	if !strings.Contains(stdout, "Keychain: unavailable") {
-		t.Errorf("stdout %q does not contain 'Keychain: unavailable'", stdout)
-	}
-	if strings.Contains(stdout, "Keychain: unavailable — keychain unavailable") {
-		t.Errorf("stdout %q has doubled wording (regression)", stdout)
+	if !strings.Contains(stdout, "keychain unavailable") {
+		t.Errorf("stdout %q does not contain 'keychain unavailable'", stdout)
 	}
 	if !strings.Contains(stdout, "sudo dnf install gnome-keyring") {
 		t.Errorf("stdout %q does not contain Fedora install command", stdout)
 	}
 	if !strings.Contains(stdout, "https://obscuro.dev/docs/troubleshooting") {
 		t.Errorf("stdout %q does not contain docs URL", stdout)
-	}
-	if !strings.Contains(stdout, "Salt fingerprint:") {
-		t.Errorf("stdout %q missing 'Salt fingerprint:' line", stdout)
-	}
-	if !strings.Contains(stdout, "Repo:") {
-		t.Errorf("stdout %q missing 'Repo:' line", stdout)
 	}
 }
 
@@ -1423,6 +1437,11 @@ func TestInitOfferKeychainYes(t *testing.T) {
 	useMockKeyring(t)
 	withFakePassword(t, "pw", "pw")
 	withFakeKeychainConfirm(t, "y", true)
+	origSelector := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		return backendChoice{Kind: BackendKeychain}, nil
+	}
+	t.Cleanup(func() { runBackendSelectorFn = origSelector })
 	_, stderr, err := execCmd(t, "init")
 	if err != nil {
 		t.Fatalf("init failed: %v\nstderr: %s", err, stderr)
@@ -1463,6 +1482,11 @@ func TestInitOfferKeychainDefaultEnter(t *testing.T) {
 	useMockKeyring(t)
 	withFakePassword(t, "pw", "pw")
 	withFakeKeychainConfirm(t, "", true)
+	origSelector := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		return backendChoice{Kind: BackendKeychain}, nil
+	}
+	t.Cleanup(func() { runBackendSelectorFn = origSelector })
 	_, stderr, err := execCmd(t, "init")
 	if err != nil {
 		t.Fatalf("init failed: %v\nstderr: %s", err, stderr)
@@ -1501,17 +1525,25 @@ func TestInitOfferKeychainNoTTY(t *testing.T) {
 func TestInitOfferKeychain_UnavailableSkipsPrompt(t *testing.T) {
 	setup(t)
 	withFakePassword(t, testPassword, testPassword)
-	withFakeKeychainBackend(t, errors.New("dbus down"), nil)
+	withFakeKeychainProbe(t, "dbus down")
 	withFakeOSInfo(t, OSInfo{Platform: "darwin", Distro: "macos", Extra: map[string]string{"homebrew": "apple-silicon"}})
 
-	// Wrap the confirm function to count calls — must remain 0.
+	// Ordering contract: confirm runs BEFORE the backend selector. User says
+	// "y", selector then reports keychain unavailable, user cancels. Init must
+	// still exit 0 and stderr must show the skip message. Hence confirmCalled == 1.
 	confirmCalled := 0
-	orig := offerKeychainConfirmFn
+	origConfirm := offerKeychainConfirmFn
 	offerKeychainConfirmFn = func(prompt string) (string, bool) {
 		confirmCalled++
 		return "y", true
 	}
-	t.Cleanup(func() { offerKeychainConfirmFn = orig })
+	t.Cleanup(func() { offerKeychainConfirmFn = origConfirm })
+
+	origSelector := runBackendSelectorFn
+	runBackendSelectorFn = func(_ []BackendStatus, _ bool) (backendChoice, error) {
+		return backendChoice{}, ErrCancelled
+	}
+	t.Cleanup(func() { runBackendSelectorFn = origSelector })
 
 	_, stderr, err := execCmd(t, "init")
 	if err != nil {
@@ -1520,17 +1552,11 @@ func TestInitOfferKeychain_UnavailableSkipsPrompt(t *testing.T) {
 	if _, statErr := os.Stat(".obscuro/config.json"); statErr != nil {
 		t.Fatal("init did not create .obscuro/config.json")
 	}
-	if !strings.Contains(stderr, "keychain unavailable") {
-		t.Errorf("stderr %q does not contain 'keychain unavailable'", stderr)
+	if !strings.Contains(stderr, "Skipping backend setup") {
+		t.Errorf("stderr %q does not contain 'Skipping backend setup'", stderr)
 	}
-	if !strings.Contains(stderr, "unlock login keychain") {
-		t.Errorf("stderr %q does not contain macOS keychain instruction", stderr)
-	}
-	if !strings.Contains(stderr, "https://obscuro.dev/docs/troubleshooting") {
-		t.Errorf("stderr %q does not contain docs URL", stderr)
-	}
-	if confirmCalled != 0 {
-		t.Errorf("offerKeychainConfirmFn called %d times, want 0 (should be skipped)", confirmCalled)
+	if confirmCalled != 1 {
+		t.Errorf("offerKeychainConfirmFn called %d times, want 1 (confirm precedes selector in new flow)", confirmCalled)
 	}
 }
 
@@ -1977,6 +2003,10 @@ func TestPasswordResolutionPriority_KeychainBeatsEnv(t *testing.T) {
 	}
 	if err := keychain.Store(cfg.Salt, testPassword); err != nil {
 		t.Fatalf("keychain.Store: %v", err)
+	}
+	cfg.PasswordBackend = "keychain"
+	if err := store.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
 	}
 
 	t.Setenv("OBSCURO_PASSWORD", "wrong-password")
@@ -2652,7 +2682,7 @@ func TestAuthStoreCorrectPassword(t *testing.T) {
 	password = ""
 	t.Setenv("OBSCURO_PASSWORD", testPassword)
 
-	_, _, err := execCmd(t, "auth", "store")
+	_, _, err := execCmd(t, "auth", "store", "--backend=keychain")
 	if err != nil {
 		t.Fatalf("auth store failed: %v", err)
 	}
@@ -2677,7 +2707,7 @@ func TestAuthStoreWrongPassword(t *testing.T) {
 	password = ""
 	t.Setenv("OBSCURO_PASSWORD", "wrong")
 
-	_, _, err := execCmd(t, "auth", "store")
+	_, _, err := execCmd(t, "auth", "store", "--backend=keychain")
 	if err == nil {
 		t.Fatal("expected error for wrong password")
 	}
@@ -2764,8 +2794,11 @@ func TestAuthStatusEntryStored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth status failed: %v", err)
 	}
-	if !strings.Contains(stdout, "Keychain: password stored") {
-		t.Fatalf("expected stdout to contain 'Keychain: password stored', got: %q", stdout)
+	if !strings.Contains(stdout, "Configured backend:") {
+		t.Fatalf("expected stdout to contain 'Configured backend:', got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "keychain: OS keychain") {
+		t.Fatalf("expected stdout to contain keychain detector row, got: %q", stdout)
 	}
 }
 
@@ -2778,8 +2811,11 @@ func TestAuthStatusNoEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth status failed: %v", err)
 	}
-	if !strings.Contains(stdout, "Keychain: no password stored") {
-		t.Fatalf("expected stdout to contain 'Keychain: no password stored', got: %q", stdout)
+	if !strings.Contains(stdout, "Configured backend: none") {
+		t.Fatalf("expected stdout to contain 'Configured backend: none', got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "keychain: OS keychain") {
+		t.Fatalf("expected stdout to contain keychain detector row, got: %q", stdout)
 	}
 }
 
@@ -3103,9 +3139,8 @@ func TestAuthStatusInitialized(t *testing.T) {
 		t.Fatalf("auth status failed: %v", err)
 	}
 	combined := stdout + stderr
-	if !strings.Contains(combined, "no password stored") &&
-		!strings.Contains(combined, "not stored") {
-		t.Fatalf("expected 'no password stored' / 'not stored', got: %q", combined)
+	if !strings.Contains(combined, "Configured backend:") {
+		t.Fatalf("expected 'Configured backend:' in output, got: %q", combined)
 	}
 }
 
@@ -3115,7 +3150,7 @@ func TestAuthStoreAndClear(t *testing.T) {
 	initVault(t)
 
 	password = ""
-	if _, _, err := execCmd(t, "auth", "store", "--password", testPassword); err != nil {
+	if _, _, err := execCmd(t, "auth", "store", "--backend=keychain", "--password", testPassword); err != nil {
 		t.Fatalf("auth store failed: %v", err)
 	}
 
@@ -3141,7 +3176,7 @@ func TestAuthStoreWrongPasswordPlan(t *testing.T) {
 	initVault(t)
 
 	password = ""
-	_, _, err := execCmd(t, "auth", "store", "--password", "wrongpassword")
+	_, _, err := execCmd(t, "auth", "store", "--backend=keychain", "--password", "wrongpassword")
 	if err == nil {
 		t.Fatal("expected error for wrong password")
 	}

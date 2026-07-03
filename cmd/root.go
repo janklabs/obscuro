@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/janklabs/obscuro/internal/crypto"
 	"github.com/janklabs/obscuro/internal/keychain"
+	"github.com/janklabs/obscuro/internal/pwfile"
 	"github.com/janklabs/obscuro/internal/store"
 	"github.com/janklabs/obscuro/internal/version"
 	"github.com/spf13/cobra"
@@ -34,6 +36,16 @@ type updateResult struct {
 }
 
 var updateCh chan updateResult
+
+// exitErr is a sentinel error type that carries an explicit OS exit code.
+// Cobra returns 1 by default; exitErr lets auth store signal 2 (non-TTY/cancelled)
+// and 3 (explicit --backend flag but backend unavailable).
+type exitErr struct {
+	code int
+	msg  string
+}
+
+func (e *exitErr) Error() string { return e.msg }
 
 var rootCmd = &cobra.Command{
 	Use:   "obscuro",
@@ -90,6 +102,10 @@ func init() {
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		var ee *exitErr
+		if errors.As(err, &ee) {
+			os.Exit(ee.code)
+		}
 		os.Exit(1)
 	}
 }
@@ -102,10 +118,14 @@ func RootCmd() *cobra.Command {
 // getPassword resolves the master password using the following priority:
 //  1. --password / -p flag
 //  2. --password-file flag (reads from file, or stdin if "-")
-//  3. OS keychain (keyed by vault salt)
+//  3. Configured backend (from cfg.PasswordBackend):
+//     - "keychain" → OS keychain keyed by cfg.Salt
+//     - "file"     → managed password file keyed by cfg.Salt
+//     - "" or "none" → skipped (pre-migration vaults)
+//     - unknown value → logged warning, skipped
 //  4. OBSCURO_PASSWORD environment variable
 //  5. Interactive /dev/tty prompt
-func getPassword(prompt string, salt string) (string, error) {
+func getPassword(prompt string, cfg store.Config) (string, error) {
 	// 1. Flag
 	if password != "" {
 		return password, nil
@@ -120,11 +140,27 @@ func getPassword(prompt string, salt string) (string, error) {
 		return pw, nil
 	}
 
-	// 3. OS keychain
-	if salt != "" {
-		if pw, err := keychain.Get(salt); err == nil && pw != "" {
+	// 3. Configured backend
+	switch cfg.PasswordBackend {
+	case "", "none":
+		// pre-migration vault or explicitly disabled; fall through to env/prompt
+	case "keychain":
+		if pw, err := keychain.Get(cfg.Salt); err == nil && pw != "" {
 			return pw, nil
 		}
+		// keychain miss or error → fall through to env/prompt
+	case "file":
+		pw, err := pwfile.Read(cfg.Salt)
+		if err == nil {
+			return pw, nil
+		}
+		if !errors.Is(err, pwfile.ErrNotFound) {
+			// Unexpected error (e.g. permission denied) → propagate
+			return "", fmt.Errorf("reading password file: %w", err)
+		}
+		// ErrNotFound → fall through to env/prompt (first-run behaviour)
+	default:
+		fmt.Fprintf(os.Stderr, "warning: unknown password_backend %q in config, ignoring\n", cfg.PasswordBackend)
 	}
 
 	// 4. Environment variable
@@ -132,7 +168,7 @@ func getPassword(prompt string, salt string) (string, error) {
 		return pw, nil
 	}
 
-	// 4. Interactive prompt
+	// 5. Interactive prompt
 	return promptPasswordFn(prompt)
 }
 
@@ -177,7 +213,7 @@ func authenticate() ([]byte, error) {
 		return nil, fmt.Errorf("decoding salt: %w", err)
 	}
 
-	pw, err := getPassword("Enter master password: ", cfg.Salt)
+	pw, err := getPassword("Enter master password: ", *cfg)
 	if err != nil {
 		return nil, err
 	}
