@@ -92,7 +92,9 @@ func defaultKeychainProbe() backendProbe {
 		case errors.Is(err, keyring.ErrUnsupportedPlatform):
 			status.Reason = "unsupported platform"
 		case strings.Contains(err.Error(), "The name org.freedesktop.secrets") ||
-			strings.Contains(err.Error(), "dbus"):
+			strings.Contains(err.Error(), "dbus") ||
+			strings.Contains(err.Error(), "dial unix") ||
+			strings.Contains(err.Error(), "no such file or directory"):
 			status.Reason = "dbus session bus unreachable — install gnome-keyring or use file backend"
 		case strings.Contains(err.Error(), "unlock correct collection") ||
 			strings.Contains(err.Error(), "locked"):
