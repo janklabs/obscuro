@@ -26,7 +26,9 @@ Keychain is available by default. The login keychain must be unlocked (it usuall
 Credential Manager is available by default on Windows 10 and later.
 
 <Callout type="info">
-  When you run `obscuro auth store`, an interactive selector lets you pick your password backend (OS keychain or managed file). Run `obscuro auth doctor` to see which backends are available first.
+  When you run `obscuro auth store`, an interactive selector lets you pick your
+  password backend (OS keychain or managed file). Run `obscuro auth doctor` to
+  see which backends are available first.
 </Callout>
 
 <Callout type="warn">
@@ -80,12 +82,12 @@ Prompts for your master password, then launches an interactive selector so you c
 
 **Exit codes:**
 
-| Exit code | Meaning |
-| --- | --- |
-| `0` | Password stored successfully. |
-| `1` | Config/crypto error (vault not initialized, wrong password, disk I/O). |
-| `2` | Non-TTY session and no `--backend` flag, or user cancelled the selector. Stderr lists the flag recipes to run non-interactively. |
-| `3` | `--backend=<name>` was passed but that backend is not available on this host. Stderr shows the underlying reason from the detector. |
+| Exit code | Meaning                                                                                                                             |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | Password stored successfully.                                                                                                       |
+| `1`       | Config/crypto error (vault not initialized, wrong password, disk I/O).                                                              |
+| `2`       | Non-TTY session and no `--backend` flag, or user cancelled the selector. Stderr lists the flag recipes to run non-interactively.    |
+| `3`       | `--backend=<name>` was passed but that backend is not available on this host. Stderr shows the underlying reason from the detector. |
 
 **Scriptable example:**
 
@@ -124,5 +126,6 @@ Tells you whether a password is currently saved in the keychain.
 Under the hood, this uses [go-keyring](https://github.com/zalando/go-keyring).
 
 <Callout type="info">
-  Prefer `obscuro auth doctor` first — it prints exactly which backends are working right now with only transient probe side effects.
+  Prefer `obscuro auth doctor` first — it prints exactly which backends are
+  working right now with only transient probe side effects.
 </Callout>

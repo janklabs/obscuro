@@ -173,10 +173,10 @@ See [configuration](/docs/configuration) for the full password-resolution order.
 
 Obscuro now ships with two interchangeable backends for storing your master password between commands. Pick the one that matches your host, or switch at any time without re-initialising the vault.
 
-| Backend    | Availability                                       | Setup effort | Portability                                  | Security notes                          |
-| ---------- | -------------------------------------------------- | ------------ | -------------------------------------------- | --------------------------------------- |
-| `keychain` | Built-in on macOS/Windows; requires Secret Service on Linux | None         | Host-specific                                | Password never touches disk             |
-| `file`     | Always available                                   | None         | Cross-platform; copy file to move vault      | Mode 0600 unencrypted file at XDG path  |
+| Backend    | Availability                                                | Setup effort | Portability                             | Security notes                         |
+| ---------- | ----------------------------------------------------------- | ------------ | --------------------------------------- | -------------------------------------- |
+| `keychain` | Built-in on macOS/Windows; requires Secret Service on Linux | None         | Host-specific                           | Password never touches disk            |
+| `file`     | Always available                                            | None         | Cross-platform; copy file to move vault | Mode 0600 unencrypted file at XDG path |
 
 The managed password file is stored at `${XDG_CONFIG_HOME:-~/.config}/obscuro/vaults/<hash>.pw` (mode 0600). The hash is the first 16 hex characters of `sha256(base64-encoded-salt)`, one file per vault. On Windows the path is `%APPDATA%\obscuro\vaults\<hash>.pw`.
 
@@ -187,7 +187,9 @@ To switch or set a backend, run `obscuro auth store` (interactive selector) or `
 Run `obscuro auth doctor` at any time to see which backends are available on your host without modifying any state.
 
 <Callout type="info">
-  `auth doctor` performs one transient keychain probe (sentinel entry, immediately deleted) and one XDG-dir probe file (immediately deleted). It does not modify vault config or stored passwords.
+  `auth doctor` performs one transient keychain probe (sentinel entry,
+  immediately deleted) and one XDG-dir probe file (immediately deleted). It does
+  not modify vault config or stored passwords.
 </Callout>
 
 ```sh
@@ -213,7 +215,11 @@ secret-tool store --label="obscuro test" service obscuro username test
 If this hangs or fails, your session doesn't have an unlocked keyring. Use `--backend=file` instead.
 
 <Callout type="warn">
-  The interactive backend selector uses a full-screen TUI that requires a modern terminal with ANSI support. On Windows, use Windows Terminal, VS Code integrated terminal, or PowerShell 7. Legacy `conhost.exe` may garble output. For CI or older terminals, use `--backend=file --password-file /path/to/pw` for a fully non-interactive path.
+  The interactive backend selector uses a full-screen TUI that requires a modern
+  terminal with ANSI support. On Windows, use Windows Terminal, VS Code
+  integrated terminal, or PowerShell 7. Legacy `conhost.exe` may garble output.
+  For CI or older terminals, use `--backend=file --password-file /path/to/pw`
+  for a fully non-interactive path.
 </Callout>
 
 ## Related commands

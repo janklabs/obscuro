@@ -29,12 +29,12 @@ Obscuro checks these sources in order and uses the first one it finds:
 
 The `.obscuro/config.json` file holds vault metadata (never secret values themselves). It is safe to commit.
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `salt` | string | — | Base64-encoded Argon2 salt (set by `obscuro init`) |
-| `verification_token` | string | — | Encrypted token to verify password correctness |
-| `schema_version` | int | `0` | Config schema version (`0`=v1, `2`=v2+). Written by `obscuro auth store`. |
-| `password_backend` | string | `""` | Which backend `getPassword` reads from: `keychain`, `file`, `none`, or `""` (skipped) |
+| Field                | Type   | Default | Description                                                                           |
+| -------------------- | ------ | ------- | ------------------------------------------------------------------------------------- |
+| `salt`               | string | —       | Base64-encoded Argon2 salt (set by `obscuro init`)                                    |
+| `verification_token` | string | —       | Encrypted token to verify password correctness                                        |
+| `schema_version`     | int    | `0`     | Config schema version (`0`=v1, `2`=v2+). Written by `obscuro auth store`.             |
+| `password_backend`   | string | `""`    | Which backend `getPassword` reads from: `keychain`, `file`, `none`, or `""` (skipped) |
 
 ## Environment Variables
 
