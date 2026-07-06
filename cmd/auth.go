@@ -79,6 +79,11 @@ var authStoreCmd = &cobra.Command{
 			}
 		}
 
+		// Print a visible prompt banner after the TUI exits. term.ReadPassword
+		// writes no echo, so without this line the cursor sits silently below
+		// the selector footer and the CLI looks frozen.
+		fmt.Fprintf(os.Stderr, "\nEnter master password for %s backend:\n", choice.Kind)
+
 		// Set PasswordBackend in-memory BEFORE getPassword so getPassword's
 		// backend-check step sees the just-chosen backend on first run.
 		cfg.PasswordBackend = string(choice.Kind)

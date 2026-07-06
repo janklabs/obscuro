@@ -3942,3 +3942,29 @@ func TestAuthClear_RejectsBackendFlag(t *testing.T) {
 		t.Fatalf("expected 'unknown flag: --backend' in error/stderr, got err=%v\nstderr=%q", err, stderr)
 	}
 }
+
+// TestAuthStore_PrintsPasswordPromptBanner verifies that authStoreCmd prints a
+// visible password prompt banner to stderr after backend selection and before the
+// password read. Without this banner the terminal looks frozen after the TUI exits
+// because term.ReadPassword produces no echo.
+func TestAuthStore_PrintsPasswordPromptBanner(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	useMockKeyring(t)
+	initVault(t)
+	password = ""
+	withFakePassword(t, testPassword)
+	withFakeBackendChoice(t, BackendFile, false)
+	withFakeBackendProbes(t, []BackendStatus{
+		{Kind: BackendKeychain, Available: true, Reason: "ready", Name: "OS keychain"},
+		{Kind: BackendFile, Available: true, Reason: "ready", Name: "managed file"},
+	})
+
+	_, stderr, err := execCmd(t, "auth", "store")
+	if err != nil {
+		t.Fatalf("auth store failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stderr, "Enter master password for file backend:") {
+		t.Errorf("stderr = %q, want it to contain password prompt banner", stderr)
+	}
+}
