@@ -93,7 +93,14 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		desired := compactHeight(len(m.statuses), m.verbose, m.statuses)
+		if desired > msg.Height-v {
+			desired = msg.Height - v
+		}
+		if desired < 1 {
+			desired = 1
+		}
+		m.list.SetSize(msg.Width-h, desired)
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -181,6 +188,31 @@ Or provide the password directly:
   obscuro auth store --password-file /path/to/pw
 `
 
+// compactHeight computes the minimum list height needed to show all items
+// without padding the selector to the full terminal viewport.
+// Chrome = title(1) + pagination(1) + footer-row(1) + vertical-margin(2) = 5.
+// Each item costs itemHeight(2) rows, plus itemSpacing(1) between items
+// (NOT after the last item), so for n items: n*itemHeight + max(0,n-1)*itemSpacing.
+// In verbose mode each item additionally costs len(s.Verbose) rows.
+// Result is clamped to a minimum of chrome(5) so chrome is never clipped.
+func compactHeight(n int, verbose bool, statuses []BackendStatus) int {
+	const (
+		chrome      = 5 // title + pagination + footer + 2 vertical-margin
+		itemHeight  = 2 // DefaultDelegate height when ShowDescription=true
+		itemSpacing = 1 // DefaultDelegate spacing (between items, not after last)
+	)
+	if n <= 0 {
+		return chrome
+	}
+	h := chrome + n*itemHeight + (n-1)*itemSpacing
+	if verbose {
+		for i := 0; i < n && i < len(statuses); i++ {
+			h += len(statuses[i].Verbose)
+		}
+	}
+	return h
+}
+
 // runBackendSelector is the production entry point. It refuses to run
 // without a TTY (returning ErrNonInteractive) and otherwise drives a
 // bubbles/list model until the user selects a backend or cancels.
@@ -197,7 +229,7 @@ func runBackendSelector(statuses []BackendStatus, verbose bool) (backendChoice, 
 	}
 	// Width/height are seeded here; the first WindowSizeMsg will resize
 	// the list to the real terminal viewport.
-	m.list = list.New(m.buildItems(), delegate, 60, 10)
+	m.list = list.New(m.buildItems(), delegate, 60, compactHeight(len(statuses), verbose, statuses))
 	m.list.Title = "Select password backend"
 	m.list.SetShowStatusBar(false)
 	m.list.SetFilteringEnabled(false)

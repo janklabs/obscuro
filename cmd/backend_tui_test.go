@@ -115,3 +115,37 @@ func TestRunBackendSelector_NonInteractive(t *testing.T) {
 		t.Errorf("stderr = %q, want it to contain %q", got, "--backend=file")
 	}
 }
+
+// TestCompactHeight_Table verifies the compact height formula does not
+// over-allocate to the full terminal viewport. Each case asserts a tight
+// band: the result must be at least the chrome minimum (5) and at most the
+// stated max so the selector renders inline rather than full-screen.
+func TestCompactHeight_Table(t *testing.T) {
+	twoItems := []BackendStatus{
+		{Kind: BackendKeychain, Verbose: []string{"line1", "line2", "line3"}},
+		{Kind: BackendFile, Verbose: []string{"line1", "line2", "line3"}},
+	}
+	tests := []struct {
+		name     string
+		n        int
+		verbose  bool
+		statuses []BackendStatus
+		wantMax  int
+		wantMin  int
+	}{
+		{"2 items non-verbose", 2, false, twoItems, 10, 5},
+		{"2 items verbose 3 lines each", 2, true, twoItems, 20, 5},
+		{"0 items", 0, false, nil, 10, 5},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := compactHeight(tc.n, tc.verbose, tc.statuses)
+			if got < tc.wantMin {
+				t.Errorf("compactHeight(%d, %v, ...) = %d, want >= %d", tc.n, tc.verbose, got, tc.wantMin)
+			}
+			if got > tc.wantMax {
+				t.Errorf("compactHeight(%d, %v, ...) = %d, want <= %d", tc.n, tc.verbose, got, tc.wantMax)
+			}
+		})
+	}
+}
