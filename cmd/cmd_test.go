@@ -41,6 +41,7 @@ func setup(t *testing.T) {
 	password = ""
 	passwordFile = ""
 	secretValue = ""
+	onConflict = ""
 	injectStrict = false
 	upgradeSkipChecksum = false
 	upgradeRequireSignature = false
