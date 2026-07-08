@@ -41,6 +41,7 @@ type importModel struct {
 	list      list.Model
 	choice    *ImportChoice
 	cancelled bool
+	nItems    int
 }
 
 // Init is required by tea.Model. No async work to kick off.
@@ -51,11 +52,14 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		height := msg.Height - v
-		if height < 1 {
-			height = 1
+		desired := compactHeight(m.nItems, false, nil)
+		if desired > msg.Height-v {
+			desired = msg.Height - v
 		}
-		m.list.SetSize(msg.Width-h, height)
+		if desired < 1 {
+			desired = 1
+		}
+		m.list.SetSize(msg.Width-h, desired)
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -113,7 +117,7 @@ func runImportChoice(newCount, existingCount int) (ImportChoice, error) {
 	delegate := list.NewDefaultDelegate()
 	delegate.ShowDescription = false
 	n := len(items)
-	m := importModel{}
+	m := importModel{nItems: n}
 	m.list = list.New(items, delegate, 60, compactHeight(n, false, nil))
 	m.list.Title = "How should conflicts be handled?"
 	m.list.SetShowStatusBar(false)

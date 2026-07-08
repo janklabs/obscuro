@@ -14,6 +14,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // TestRunImportChoiceFn_ReturnsScriptedChoice verifies the test seam:
@@ -119,5 +122,49 @@ func TestRunImportChoice_NonInteractive(t *testing.T) {
 	}
 	if !strings.Contains(got, "terminal") && !strings.Contains(got, "TTY") {
 		t.Errorf("stderr = %q, want it to contain %q or %q", got, "terminal", "TTY")
+	}
+}
+
+// TestImportModel_WindowResize_UsesCompactHeight locks the compact
+// rendering behaviour. Regression guard: an earlier version used the
+// full terminal viewport (msg.Height - v) instead of compactHeight(),
+// which made the prompt paint ~30 blank rows below the footer on a
+// standard 40-row terminal. This test drives the Update handler
+// directly (no bubbletea program needed) and asserts the list height
+// stays at the compact bound for both 2- and 3-item variants.
+func TestImportModel_WindowResize_UsesCompactHeight(t *testing.T) {
+	const bigTerminalHeight = 40
+	cases := []struct {
+		name   string
+		nItems int
+	}{
+		{"2-item prompt (no conflicts)", 2},
+		{"3-item prompt (with conflicts)", 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := make([]list.Item, tc.nItems)
+			for i := range items {
+				items[i] = importItem{title: "opt", choice: ImportChoiceCancel}
+			}
+			delegate := list.NewDefaultDelegate()
+			delegate.ShowDescription = false
+			m := importModel{nItems: tc.nItems}
+			m.list = list.New(items, delegate, 60, compactHeight(tc.nItems, false, nil))
+
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: bigTerminalHeight})
+			fm, ok := updated.(importModel)
+			if !ok {
+				t.Fatalf("unexpected model type %T", updated)
+			}
+
+			want := compactHeight(tc.nItems, false, nil)
+			if fm.list.Height() != want {
+				t.Errorf("list height = %d, want compactHeight = %d (regression: prompt is consuming full terminal viewport)", fm.list.Height(), want)
+			}
+			if fm.list.Height() >= bigTerminalHeight {
+				t.Errorf("list height %d >= terminal height %d — prompt is not compact", fm.list.Height(), bigTerminalHeight)
+			}
+		})
 	}
 }
