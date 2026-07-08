@@ -35,6 +35,7 @@ var setCmd = &cobra.Command{
 			}
 			value = v
 		} else {
+			fmt.Fprintf(os.Stderr, "Enter the secret value for '%s'.\n", name)
 			v, err := promptPasswordFn("Enter secret value: ")
 			if err != nil {
 				return fmt.Errorf("reading secret: %w", err)
@@ -60,7 +61,7 @@ var setCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Secret '%s' saved.\n", name)
+		fmt.Fprintf(os.Stderr, "Secret '%s' was set.\n", name)
 		return nil
 	},
 }
