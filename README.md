@@ -127,6 +127,67 @@ obscuro inject --strict < manifest.yaml > rendered.yaml
 OBSCURO_INJECT_STRICT=1 helm install myrelease ./chart --post-renderer obscuro --post-renderer-args inject
 ```
 
+### obscuro import
+
+Bulk-imports secrets from a `.env` file into the vault.
+
+```
+obscuro import FILE
+```
+
+Parses `FILE`, counts how many keys are new versus already present in the vault, and prints:
+
+```
+Found N new secrets and M pre-existing secrets in FILE.
+```
+
+When at least one key already exists, an interactive picker offers three options:
+
+- **Import new secrets only** (leaves pre-existing values untouched)
+- **Import new and overwrite existing**
+- **Cancel**
+
+When no pre-existing keys are found, the picker collapses to two options:
+
+- **Import N new secret(s)**
+- **Cancel**
+
+After the selection runs, it prints:
+
+```
+Import complete: X added, Y overwritten, Z skipped.
+```
+
+For non-interactive/CI use, pass `--on-conflict` to skip the picker:
+
+| Value | Behavior |
+|-------|----------|
+| `fail` (default) | Error out if any pre-existing key would be overwritten |
+| `skip` | Import only new keys, silently skip pre-existing |
+| `overwrite` | Import all keys, overwriting pre-existing values |
+
+Keys must match `[A-Z][A-Z0-9_]*` (the same rule as `inject` placeholders). Empty values are rejected.
+
+```bash
+cat secrets.env
+# API_KEY=my-api-key
+# DB_PASS=supersecret
+
+obscuro import secrets.env
+# Found 2 new secrets and 0 pre-existing secrets in secrets.env.
+# Import 2 new secret(s)
+# Cancel
+# ↑/↓ or k/j: navigate • enter: select • q/esc: cancel
+```
+
+In CI, resolve the password via `OBSCURO_PASSWORD` and pick a conflict strategy up front:
+
+```bash
+OBSCURO_PASSWORD=mypassword obscuro import secrets.env --on-conflict=skip
+# Found 2 new secrets and 0 pre-existing secrets in secrets.env.
+# Import complete: 2 added, 0 overwritten, 0 skipped.
+```
+
 ### `obscuro version`
 
 Prints the current version.
